@@ -12,5 +12,6 @@
   :test-paths ["test/clj"]
   :resource-paths ["resources" "test/resources"]
   :main ^:skip-aot hyperphor.thirdmind.core
-  :aliases {"search" ["run" "-m" "hyperphor.thirdmind.search"]}
+  :aliases {"search" ["run" "-m" "hyperphor.thirdmind.search"]
+            "watch"  ["run" "-m" "hyperphor.thirdmind.watch"]}
   :jvm-opts ["--enable-native-access=ALL-UNNAMED"])
