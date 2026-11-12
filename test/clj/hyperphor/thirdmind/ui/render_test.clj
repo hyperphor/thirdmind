@@ -37,15 +37,48 @@
   (testing "a block that is only a block ref embeds the target; cycles stop"
     (let [c (assoc ctx :block {"q" "> quoted *text*" "loop" "((loop))"})]
       (is (str/includes? (r/block-html c "((q))") "<div class=\"transclusion\"><blockquote>\n<p>quoted <em>text</em></p>"))
-      (is (str/includes? (r/block-html c "see ((q))") ">quoted *text*</a>") "inline ref: label, no >")
+      (is (str/includes? (r/block-html c "see ((q))") ">quoted <em>text</em></a>") "inline ref: label, no >")
       (is (string? (r/block-html c "((loop))")))))
   (testing "nothing inside code"
     (let [h (html "Code block:\n```clojure\n- not a block [[NotAPage]] #nottag\n```\nafter code, `inline [[AlsoNot]]`")]
       (is (not (str/includes? h "<a ")))
       (is (str/includes? h "[[NotAPage]] #nottag"))
       (is (str/includes? h "<code>inline [[AlsoNot]]</code>"))))
-  (testing "labels are escaped"
-    (is (str/includes? (html "[[a<b>_c_]]") ">a&lt;b&gt;_c_</a>"))))
+  (testing "labels are escaped, but emphasis in names renders"
+    (is (str/includes? (html "[[a<b> c]]") ">a&lt;b&gt; c</a>"))
+    (is (str/includes? (html "[[__Erlebnis__]]") "\"/page/__erlebnis__\"><em>Erlebnis</em></a>"))))
+
+(deftest macros-test
+  (testing "videos"
+    (is (str/includes? (html "{{video https://youtu.be/J3rNOAhonPw}}") "src=\"https://www.youtube.com/embed/J3rNOAhonPw\""))
+    (is (str/includes? (html "{{youtube https://www.youtube.com/watch?v=FiIP0K4LXbU&t=3}}") "embed/FiIP0K4LXbU\""))
+    (is (str/includes? (html "{{video https://www.youtube.com/shorts/abc}}") "class=\"video vertical\""))
+    (is (str/includes? (html "{{video https://vimeo.com/123}}") "player.vimeo.com/video/123"))
+    (is (str/includes? (html "{{video https://example.com/v.mp4}}") "<a href=\"https://example.com/v.mp4\">")))
+  (testing "tweets, including x.com and [title](url) args"
+    (is (str/includes? (html "{{tweet  https://twitter.com/i/status/148 }}")
+                       "<blockquote class=\"twitter-tweet\"><a href=\"https://twitter.com/i/status/148\">"))
+    (is (str/includes? (html "{{twitter [A title](https://x.com/u/status/9)}}") "href=\"https://twitter.com/u/status/9\"")))
+  (testing "embed, sidenote, unknown"
+    (is (str/includes? (r/block-html ctx "{{embed ((abc-123))}}") "<div class=\"transclusion\">"))
+    (is (str/includes? (html "{{embed [[ELIZA]]}}") "href=\"/page/eliza\""))
+    (is (str/includes? (html "x {{sidenote see [[ELIZA]]}}") "<span class=\"sidenote\">see <a class=\"ref\" href=\"/page/eliza\">"))
+    (is (str/includes? (html "{{timer 5}}") "<span class=\"macro\">{{timer 5}}</span>")))
+  (testing "not inside code"
+    (is (not (str/includes? (html "`{{video https://youtu.be/x}}`") "iframe")))))
+
+(deftest italics-test
+  (is (str/includes? (html "unlike __Erfahrung__, a") "unlike <em>Erfahrung</em>, a"))
+  (is (str/includes? (html "__see [[ELIZA]]__") "<em>see <a class=\"ref\""))
+  (is (not (str/includes? (html "https://x.com/a__b__c and snake__case__x") "<em>")))
+  (is (str/includes? (html "**bold**") "<strong>bold</strong>")))
+
+(deftest titles-test
+  (is (= "<em>Erlebnis</em>" (r/title-html "__Erlebnis__")))
+  (is (= "<em>Materialism</em>, Terry Eagleton" (r/title-html "__Materialism__, Terry Eagleton")))
+  (is (= "a &lt;b&gt;" (r/title-html "a <b>")))
+  (is (= "Erlebnis" (r/title-text "__Erlebnis__")))
+  (is (= "1. not a list" (r/title-html "1. not a list"))))
 
 (deftest images-test
   (testing "local images, with spaces, ? and a size suffix"

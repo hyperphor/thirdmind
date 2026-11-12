@@ -27,6 +27,10 @@
 (defn- cphr-block [path] (block (str (ingest/page-key "Computer Power and Human Reason") "~" path)))
 
 (deftest parse-units-test
+  (is (= [{"title" "__Erlebnis__" "alias" "Lived"} ["" "- body"]]
+         (parse/split-front-matter ["---" "title: __Erlebnis__" "Alias: Lived" "---" "" "- body"])))
+  (is (= [{} ["--- not front matter" "- x"]] (parse/split-front-matter ["--- not front matter" "- x"])))
+  (is (= [{} ["---" "- never closed"]] (parse/split-front-matter ["---" "- never closed"])))
   (is (= {:name "Jul 5th, 2013" :day 20130705} (parse/journal-info "2013_07_05.md")))
   (is (= "Nov 22nd, 2021" (:name (parse/journal-info "2021_11_22.md"))))
   (is (= "Jun 11th, 2020" (:name (parse/journal-info "2020_06_11.md"))))
@@ -36,11 +40,11 @@
          (parse/extract-refs "#[[x y]] #tag, and #t2. not#this http://a.b/#frag #+BEGIN_QUOTE"))))
 
 (deftest report-test
-  (is (= 5 (:files *report*) (:file-pages *report*)))
+  (is (= 6 (:files *report*) (:file-pages *report*)))
   (is (empty? (:name-collisions *report*)))
   (is (= [["missing-id"]] (map rest (:unresolved-block-refs *report*))))
   (is (empty? (:duplicate-ids *report*)))
-  (is (= #{"book" "ai history" "to read" "real-tag"}
+  (is (= #{"book" "ai history" "to read" "real-tag" "askclaude"}
          (set (map (comp :name :obj) (t/find "page" {:attrs {:stub true}}))))))
 
 (deftest pages-test

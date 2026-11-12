@@ -96,6 +96,20 @@
         (cond-> (markers (first (str/split content #"\s" 2)))
           (assoc :marker (first (str/split content #"\s" 2)))))))
 
+;;; YAML-style front matter (---, key: value lines, ---), as some imported files have
+
+(defn split-front-matter
+  "[props rest-lines]: props from a leading --- front matter block (keys lowercased), else [{} lines]."
+  [lines]
+  (let [[first-line & more] lines]
+    (if-let [n (and (= "---" (some-> first-line str/trim))
+                    (some (fn [[i l]] (when (= "---" (str/trim l)) i)) (map-indexed vector more)))]
+      [(into {} (keep #(when-let [[_ k v] (re-matches #"([A-Za-z0-9_.\-]+):\s*(.*)" (str/trim %))]
+                         [(str/lower-case k) (str/trim v)]))
+             (take n more))
+       (drop (inc n) more)]
+      [{} lines])))
+
 (defn parse-lines
   "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :children-of path}]}.
   Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1])."
@@ -153,7 +167,9 @@
 (defn parse-file
   "Parse a Logseq .md file. Returns {:name :file :journal? :journal-day :props :blocks}."
   [^java.io.File f journal? rel-path]
-  (let [{:keys [props blocks]} (parse-lines (str/split-lines (slurp f)))
+  (let [[front lines]          (split-front-matter (str/split-lines (slurp f)))
+        {:keys [props blocks]} (parse-lines lines)
+        props                  (merge front props)
         fname    (.getName f)
         ;; non-date files in journals/ (eg backups) are treated as ordinary pages
         journal? (boolean (and journal? (journal-info fname)))]

@@ -30,17 +30,20 @@
 (defn- page-link [ctx uri]
   (let [p ((:fetch ctx) uri)]
     [:a {:href (r/page-href (uri-key uri)) :class (when (or (nil? p) (:stub p)) "stub")}
-     (or (:name p) (uri-key uri))]))
+     (if (:name p) (raw-string (r/title-html (:name p))) (uri-key uri))]))
 
 ;;; Logseq hides these too
-(def ^:private hidden-props #{"collapsed" "created-at" "updated-at"})
+(def ^:private hidden-props #{"collapsed" "created-at" "updated-at" "alias" "tags"})
+
+(defn- visible-props [obj]
+  (for [[k v] (sort-by key obj)
+        :when (and (= "prop" (namespace k)) (not (hidden-props (name k))))]
+    [k v]))
 
 (defn- props
-  "Hiccup for an object's prop/* attributes, or nil."
+  "Hiccup for an object's visible prop/* attributes, or nil."
   [obj]
-  (when-let [ps (seq (for [[k v] (sort-by key obj)
-                           :when (and (= "prop" (namespace k)) (not (hidden-props (name k))))]
-                       [k v]))]
+  (when-let [ps (seq (visible-props obj))]
     [:dl.props (for [[k v] ps] (list [:dt (name k)] [:dd (str v)]))]))
 
 (defn- block-body [ctx {:keys [obj]}]
@@ -50,17 +53,25 @@
      (raw-string (r/block-html ctx content))
      (props obj)]))
 
+(defn- ask-claude? [{:keys [realm]} obj]
+  (some #{(ingest/page-uri realm (ingest/page-key "AskClaude"))} (:tags obj)))
+
 (defn- outline
-  "Nested list of blocks under parent-uri, given {parent-uri [block-entry]}."
+  "Nested list of blocks under parent-uri, given {parent-uri [block-entry]}. Empty blocks are skipped;
+  the subtree under an #AskClaude block is shown as a quote, closed."
   [ctx children parent-uri]
   (when-let [bs (seq (sort-by (comp :order :obj) (children parent-uri)))]
     [:ul.outline
      (for [{:keys [uri obj] :as b} bs
-           :let [sub (outline ctx children uri)]]
+           :let [sub (outline ctx children uri)]
+           :when (or sub (not (str/blank? (:content obj))) (seq (visible-props obj)))]
        [:li {:id (uri-key uri)}
-        (if (and sub (:prop/collapsed obj))
-          [:details [:summary (block-body ctx b)] sub]
-          (list (block-body ctx b) sub))])]))
+        (cond (and sub (ask-claude? ctx obj))
+              [:details.ask-claude [:summary (block-body ctx b)] [:div.claude sub]]
+              (and sub (:prop/collapsed obj))
+              [:details [:summary (block-body ctx b)] sub]
+              :else
+              (list (block-body ctx b) sub))])]))
 
 (defn- page-blocks [uri] (t/find "block" {:attrs {:page uri}}))
 
@@ -104,9 +115,9 @@
 (defn page-view [{:keys [realm graph] :as ctx} key]
   (let [uri (ingest/page-uri realm key)]
     (when-let [p (t/get uri)]
-      {:title (:name p)
+      {:title (r/title-text (:name p))
        :body  (list
-               [:h1 (:name p) (when (:stub p) [:span.stub-note " (no page)"])]
+               [:h1 (raw-string (r/title-html (:name p))) (when (:stub p) [:span.stub-note " (no page)"])]
                (when (and graph (not (:stub p)))
                  [:p.apparatus [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"]])
                (when (seq (:alias p)) [:p.aliases "Also: " (str/join ", " (:alias p))])
@@ -137,7 +148,8 @@
     (vec (for [{:keys [uri obj]} (t/find "page" {:realm realm})
                :let [n (get refs uri 0), mtime (mtimes uri)]
                :when (or (not (:stub obj)) (pos? n))]
-           {:title    (:name obj)
+           {:title    (r/title-text (:name obj))
+            :html     (r/title-html (:name obj))
             :url      (r/page-href (uri-key uri))
             :kind     (cond (:stub obj) "stub" (:journal obj) "journal" :else "page")
             :modified (some-> mtime java.time.Instant/ofEpochMilli str (subs 0 10))

@@ -1,4 +1,4 @@
-// Index page: sortable, filterable grid of pages from /index.json (ag-grid).
+// Index page: sortable, filterable grid of pages from /index.json (ag-grid). Row html is server-escaped.
 document.addEventListener("DOMContentLoaded", function () {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   const css = getComputedStyle(document.documentElement);
@@ -16,13 +16,11 @@ document.addEventListener("DOMContentLoaded", function () {
     browserColorScheme: dark ? "dark" : "light",
   });
 
-  const escape = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-
   const grid = agGrid.createGrid(document.getElementById("index-grid"), {
     theme: theme,
     columnDefs: [
       { field: "title", headerName: "Title", flex: 3, minWidth: 200,
-        cellRenderer: (p) => `<a class="${p.data.kind === "stub" ? "stub" : ""}" href="${p.data.url}">${escape(p.data.title)}</a>`,
+        cellRenderer: (p) => `<a class="${p.data.kind === "stub" ? "stub" : ""}" href="${p.data.url}">${p.data.html}</a>`,
         comparator: (a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }) },
       { field: "kind", headerName: "Kind", width: 100 },
       { field: "modified", headerName: "Modified", width: 150, sort: "desc" },

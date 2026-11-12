@@ -11,6 +11,7 @@
   --pencil: #23608c;
   --tag: #6b5a8e;
   --mark: #fbefb0;
+  --quote-bg: #eff3f6;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -27,6 +28,7 @@
     --pencil: #8cc0e4;
     --tag: #b7a6dc;
     --mark: #4d4416;
+    --quote-bg: #1a2226;
   }
 }
 * { box-sizing: border-box; }
@@ -81,8 +83,21 @@ ul.outline > li:has(> details:not([open]))::before { box-shadow: 0 0 0 .18rem co
 details > summary { list-style: none; cursor: pointer; }
 details > summary::-webkit-details-marker { display: none; }
 
-blockquote { margin: .4em 0; padding: .1em 0 .1em 1rem; border-left: 2px solid var(--pencil); color: var(--ink-soft); }
+blockquote, .claude { margin: .3em 0; padding: .35em .9em; border-left: 2px solid var(--pencil);
+                      background: var(--quote-bg); border-radius: 0 3px 3px 0; font-size: .92em; line-height: 1.55; }
 blockquote p { margin: .2em 0; }
+blockquote blockquote, .claude blockquote, .transclusion blockquote { font-size: 1em; background: none; }
+
+/* #AskClaude: the answer subtree is a quote, closed until opened */
+details.ask-claude > summary .block::after { content: " ▸"; font: var(--apparatus); color: var(--ink-faint); }
+details.ask-claude[open] > summary .block::after { content: " ▾"; }
+details.ask-claude > summary .block > p { display: inline; }
+.claude > ul.outline { margin-left: 0; padding-left: 0; border-left: none; }
+
+.sidenote { font: var(--apparatus); color: var(--ink-soft); padding-left: .4em; margin-left: .2em; border-left: 1px solid var(--rule); }
+.macro { font: .85em var(--mono); color: var(--ink-faint); }
+iframe.video { display: block; width: 100%; max-width: 560px; aspect-ratio: 16 / 9; border: 0; margin: .4em 0; border-radius: 3px; }
+iframe.video.vertical { max-width: 315px; aspect-ratio: 9 / 16; }
 .transclusion { position: relative; margin: .2em 0; padding: .05em 1.6rem .05em .8rem;
                 border-left: 2px solid color-mix(in srgb, var(--pencil) 35%, transparent);
                 background: color-mix(in srgb, var(--paper-sunk) 55%, transparent); border-radius: 0 3px 3px 0; }

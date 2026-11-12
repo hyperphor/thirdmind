@@ -83,8 +83,35 @@ honoured) and Logseq-style embedding of blocks that are only a `((ref))`. Index 
 `/index.json` (title, kind, modified, blocks, refs), cached until the db changes; ~1.8s to build on
 ammdi, then instant.
 
+### Level 0.2
+- blockquotes need more distinguishing (smaller font, different background)
+- Anything under #AskClaude should be also rendered as quote (and maybe closed by default)
+- don't render markdown metadata like -- title
+- skip empty blocks
+- render {{twitter}} and {{video}} (copy from goddinpotty if necessary)
+- titles like __Erlebnis__ should render in italics
+
+Status (Nov 12): done. Front matter (`---` / `key: value` / `---`) is parsed into page props by
+parse.clj, so a re-ingest is needed for existing dbs. `__x__` renders as italics everywhere (Roam
+convention; commonmark would make it bold). Macros: tweet/twitter (Twitter's widgets.js, loaded
+only on pages with tweets), video/youtube (YouTube, Shorts, Vimeo), embed ((id)) as a transclusion,
+embed [[page]] as a link (full page embed not yet), sidenote inline; others shown as-is.
+
+### Level 0.3
+- images need an expand / popout affordancve of some sort
+
+### Times
+OK, this one is more complicated. I want blocks annotated with their
+time range (creation - last update). Visually this should be subtle, computationally it might need to be derived from github history and stored in db
+
+Also pages should show a time range (goddinpotty already does this)
+
+And on journal pages include the day of the week
+
+
 ## Leval 1 - Incremental publishing
 
+Privacy logic
 Derived Goddinpotty features work (eg graph, page trees, lots of misc features).
 Needs some kind of dependency management
 Goal: incremental publishing
@@ -98,7 +125,7 @@ Goal: incremental publishing
   `update-file!` diff already tells us which page URIs changed; mark dirty = changed pages + pages
   that reference or are referenced by them (via `:refs`). Derived pages (index, graph map) are
   dirty on any page add/remove/rename. Inclusion changes may cascade widely; recompute fully then.
-- **Derived features to port, roughly in priority order:** index page, client-side search, recent
+- **Derived features to port, roughly in priority order:** client-side search, recent
   changes, page graph map, sidenotes, image copying, twin pages.
 
 # Level 2 - editing

@@ -18,10 +18,15 @@
   [s]
   (str/escape (str s) {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;"}))
 
+;; Logseq (from Roam) writes italics as __x__, which commonmark would make bold
+(def ^:private italic-re #"(?<![\w/])__([^_\s](?:[^\n]*?[^_\s])?)__(?![\w])")
+
 (defn- label
-  "Link text: HTML-escaped, with markdown emphasis/code chars backslash-escaped."
+  "Link text: HTML-escaped, code chars backslash-escaped; emphasis (eg __Title__) still renders."
   [s]
-  (str/replace (escape s) #"([\\`*_])" "\\\\$1"))
+  (-> (escape s)
+      (str/replace #"([\\`])" "\\\\$1")
+      (str/replace italic-re "<em>$1</em>")))
 
 (defn url-encode
   "Percent-encode s for a URL path or query (spaces as %20)."
@@ -69,23 +74,70 @@
     (format "<img src=\"%s\" alt=\"%s\"%s>" (escape (asset-href dest)) (escape alt)
             (if width (format " width=\"%s\"" width) ""))))
 
+;;; {{macro arg}}
+
+(def ^:private macro-re #"\{\{([A-Za-z][\w-]*)\s*((?:(?!\}\}).)*)\}\}")
+
+(defn- macro-url
+  "First URL in a macro arg (which may be a [title](url) link)."
+  [arg]
+  (re-find #"https?://[^\s)\]}]+" (str arg)))
+
+(defn youtube-id [url]
+  (or (second (re-find #"https://youtu\.be/([\w-]+)" url))
+      (second (re-find #"https://(?:www\.|m\.)?youtube\.com/watch\?(?:.*&)?v=([\w-]+)" url))
+      (second (re-find #"https://(?:www\.|m\.)?youtube\.com/(?:shorts|embed|live)/([\w-]+)" url))))
+
+(defn- iframe [src vertical?]
+  (format "<iframe class=\"video%s\" src=\"%s\" allow=\"encrypted-media; picture-in-picture\" allowfullscreen loading=\"lazy\"></iframe>"
+          (if vertical? " vertical" "") (escape src)))
+
+(defn- video [url]
+  (if-let [id (some-> url youtube-id)]
+    (iframe (str "https://www.youtube.com/embed/" id) (str/includes? url "/shorts/"))
+    (if-let [id (some->> url (re-find #"https://vimeo\.com/(\d+)") second)]
+      (iframe (str "https://player.vimeo.com/video/" id) false)
+      (format "<a href=\"%s\">%s</a>" (escape url) (escape url)))))
+
+;; widgets.js (added by the page layout when present) turns these into embedded tweets
+(defn- tweet [url]
+  (let [url (str/replace url #"^https://(?:www\.)?x\.com/" "https://twitter.com/")]
+    (format "<blockquote class=\"twitter-tweet\"><a href=\"%s\">%s</a></blockquote>" (escape url) (escape url))))
+
+(declare link-refs)
+
+(defn- macro [ctx m name arg]
+  (let [url (macro-url arg)]
+    (case (str/lower-case name)
+      ("tweet" "twitter") (if url (tweet url) (escape m))
+      ("video" "youtube") (if url (video url) (escape m))
+      "embed"    (if-let [[_ id] (re-find parse/block-ref-re arg)]
+                   (block-link ctx id)
+                   (link-refs ctx arg))
+      "sidenote" (str "<span class=\"sidenote\">" (link-refs ctx arg) "</span>")
+      (str "<span class=\"macro\">" (escape m) "</span>"))))
+
 (def ^:private ref-re
   (re-pattern (str/join "|" (map #(str "(?:" % ")")
-                                 [image-re asset-link-re labeled-link-re
-                                  parse/bracket-tag-re parse/wikilink-re parse/block-ref-re parse/tag-re]))))
+                                 [macro-re image-re asset-link-re labeled-link-re
+                                  parse/bracket-tag-re parse/wikilink-re parse/block-ref-re parse/tag-re
+                                  italic-re]))))
 
 (defn- link-refs
   "Replace refs, images and asset links in a non-code segment with HTML."
   [ctx s]
   (str/replace s ref-re
-               (fn [[m img-alt img-dest img-attrs asset-label asset-dest link-label link-page btag wiki bref tag]]
-                 (cond img-dest   (image img-alt img-dest img-attrs)
+               (fn [[m mac-name mac-arg img-alt img-dest img-attrs asset-label asset-dest link-label link-page
+                     btag wiki bref tag italic]]
+                 (cond mac-name   (macro ctx m mac-name mac-arg)
+                       img-dest   (image img-alt img-dest img-attrs)
                        asset-dest (format "<a class=\"asset\" href=\"%s\">%s</a>"
                                           (escape (asset-href asset-dest)) (label asset-label))
                        link-page (page-link ctx link-page link-label "ref")
                        btag (page-link ctx btag (str "#" btag) "tag")
                        wiki (page-link ctx wiki wiki "ref")
                        bref (block-link ctx bref)
+                       italic (str "<em>" (link-refs ctx italic) "</em>")
                        :else (let [t (parse/trim-tag tag)]
                                (str (page-link ctx t (str "#" t) "tag") (subs tag (count t))))))))
 
@@ -113,7 +165,8 @@
   :page  (fn [name] {:key canonical-page-key :stub bool})
   :block (fn [id] content or nil)"
   [ctx content]
-  (let [id     (second (re-matches parse/block-ref-re (str/trim content)))
+  (let [id     (second (or (re-matches parse/block-ref-re (str/trim content))
+                           (re-matches #"\{\{embed\s+\(\(([^()\s]+)\)\)\s*\}\}" (str/trim content))))
         target (when id ((:block ctx) id))
         depth  (get ctx ::depth 0)]
     (if (and target (< depth max-embed-depth))
@@ -122,6 +175,17 @@
            (format "<a class=\"bref-src\" href=\"%s\" title=\"referenced block\">↗</a>" (block-href id))
            "</div>\n")
       (markdown->html (link-logseq ctx content)))))
+
+(defn title-html
+  "Inline HTML for a page name, so markdown in names (eg __Erlebnis__) renders."
+  [name]
+  (let [h (str/trim (markdown->html (label name)))]
+    (if-let [[_ inner] (re-matches #"(?s)<p>(.*)</p>" h)] inner (escape name))))
+
+(defn title-text
+  "Page name with markdown emphasis markers removed, for <title> and sorting."
+  [name]
+  (str/replace (str name) #"(\*\*|__|\*|_)(.+?)\1" "$2"))
 
 (defn split-marker
   "[marker rest] if content starts with a task marker like TODO, else [nil content]."

@@ -25,7 +25,7 @@
   (testing "index grid rows: pages, journals, referenced stubs, with ref counts"
     (is (str/includes? (body "/") "id=\"index-grid\""))
     (let [rows (into {} (map (juxt :title identity)) (json/read-str (body "/index.json") :key-fn keyword))]
-      (is (= {:title "ELIZA" :url "/page/eliza" :kind "page" :blocks 1 :refs 3}
+      (is (= {:title "ELIZA" :html "ELIZA" :url "/page/eliza" :kind "page" :blocks 1 :refs 3}
              (dissoc (rows "ELIZA") :modified)))
       (is (re-matches #"\d{4}-\d{2}-\d{2}" (:modified (rows "ELIZA"))))
       (is (= "journal" (:kind (rows "Jul 5th, 2013"))))
@@ -50,6 +50,18 @@
   (testing "block page and block refs"
     (is (str/includes? (body "/block/abc-123") "father of"))
     (is (str/includes? (body "/page/computer%20power%20and%20human%20reason") "href=\"/block/abc-123\"")))
+
+  (testing "front matter, emphasised title, empty blocks, #AskClaude, macros"
+    (let [b (body "/page/__erlebnis__")]
+      (is (str/includes? b "<title>Erlebnis</title>"))
+      (is (str/includes? b "<h1><em>Erlebnis</em>"))
+      (is (not (str/includes? b "title:")) "front matter not rendered")
+      (is (not (str/includes? b "id=\"empty-one\"")) "empty block skipped")
+      (is (re-find #"(?s)<details class=\"ask-claude\"><summary>.*?#AskClaude.*?</summary><div class=\"claude\"><ul" b))
+      (is (str/includes? b "Short answer: <strong>partially</strong>"))
+      (is (str/includes? b "youtube.com/embed/J3rNOAhonPw"))
+      (is (str/includes? b "platform.twitter.com/widgets.js") "tweet script on pages with tweets"))
+    (is (not (str/includes? (body "/page/eliza") "widgets.js")) "and not elsewhere"))
 
   (testing "search and 404"
     (is (str/includes? (body "/search" "q=weizenbaum") "<mark>"))

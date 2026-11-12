@@ -17,19 +17,24 @@
                    (when (= a k) (URLDecoder/decode (or b "") "UTF-8"))))
         (some-> query-string (str/split #"&"))))
 
+(def ^:private tweet-script "<script async src=\"https://platform.twitter.com/widgets.js\"></script>")
+
 (defn- layout [{:keys [title head body wide]} q]
-  (str "<!DOCTYPE html>\n"
-       (h/html
-        [:html
-         [:head [:meta {:charset "utf-8"}]
-          [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
-          [:title title]
-          [:link {:rel "stylesheet" :href "/static/thirdmind.css"}]
-          head]
-         [:body {:class (when wide "wide")}
-          [:nav [:a.home {:href "/"} "Index"]
-           [:form {:action "/search"} [:input {:type "search" :name "q" :value q :placeholder "Search"}]]]
-          [:main body]]])))
+  (let [html (str (h/html
+                   [:html
+                    [:head [:meta {:charset "utf-8"}]
+                     [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+                     [:title title]
+                     [:link {:rel "stylesheet" :href "/static/thirdmind.css"}]
+                     head]
+                    [:body {:class (when wide "wide")}
+                     [:nav [:a.home {:href "/"} "Index"]
+                      [:form {:action "/search"} [:input {:type "search" :name "q" :value q :placeholder "Search"}]]]
+                     [:main body]]]))]
+    ;; tweets need Twitter's script; only load it where there are some
+    (str "<!DOCTYPE html>\n"
+         (cond-> html
+           (str/includes? html "class=\"twitter-tweet\"") (str/replace "</body>" (str tweet-script "</body>"))))))
 
 (defn- html-response [status view q]
   {:status status :headers {"Content-Type" "text/html; charset=utf-8"} :body (layout view q)})
