@@ -170,11 +170,11 @@
      :new  (vec (for [[u o] objects :when (str/includes? u "/block/")] {:uri u :obj o}))}))
 
 (defn new-tags
-  "[tag-uri block-entry] for each tag on a :new block that no :old block with the same uri or
-  content carried (so renumbered or moved blocks don't count as new)."
+  "[tag-uri block-entry] for each page ref (#tag or [[link]]) on a :new block that no :old block
+  with the same uri or content carried (so renumbered or moved blocks don't count as new)."
   [{:keys [old new]}]
-  (let [had (into #{} (for [{:keys [uri obj]} old, t (:tags obj), k [uri (:content obj)]] [t k]))]
+  (let [had (into #{} (for [{:keys [uri obj]} old, t (:refs obj), k [uri (:content obj)]] [t k]))]
     (for [{:keys [uri obj] :as b} new
-          t (:tags obj)
+          t (:refs obj)
           :when (not (or (had [t uri]) (had [t (:content obj)])))]
       [t b])))

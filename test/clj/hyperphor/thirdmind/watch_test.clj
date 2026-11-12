@@ -70,6 +70,10 @@
               (let [[k evs] (sync-and-events! k)]
                 (is (= [["pages/Plain.md" "title-less page #blyg"]] evs))
 
+                (testing "[[link]] counts as a tag"
+                  (write! "pages/Linked.md" "- see [[blyg]]")
+                  (is (= [["pages/Linked.md" "see [[blyg]]"]] (second (sync-and-events! k)))))
+
                 (testing "deleting files"
                   (.delete (io/file (:dir *cfg*) "pages/New.md"))
                   (.delete (io/file (:dir *cfg*) "pages/ELIZA.md"))
