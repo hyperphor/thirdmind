@@ -10,6 +10,7 @@
                  [com.hyperphor/tunamelt "0.1.0"]
                  [org.commonmark/commonmark "0.24.0"]
                  [org.commonmark/commonmark-ext-autolink "0.24.0"]
+                 [org.clojure/data.json "2.5.2"]
                  [hiccup "2.0.0"]
                  [http-kit "2.8.0"]]
   :source-paths ["src/clj"]

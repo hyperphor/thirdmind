@@ -68,7 +68,20 @@ Steps:
 4. Try it against ammdi; fix whatever the real graph breaks.
 
 Status (Nov 12): steps 1–3 done; first pass against ammdi works. Pages with ~1.5k backlinks take
-~2s. Not yet: images/assets, page/block embeds, sort-by-refs on the index, unlinked refs.
+~2s. Not yet: page embeds ({{embed}}), sort-by-refs on the index, unlinked refs.
+
+### Level 0.1
+ -Better styling. 
+ - blockquotes need to be distinguished
+ - bullets subtler
+ - better fonts/background. Will experiment, start by something like this: https://blyg.existingotherwise.org/
+ - pages should have link to Logseq (logseq:// whatever, goddinpotty does this in local mode)
+- index should be like ammdis (sortable multicol grid)
+
+Status (Nov 12): done, plus images (`../assets/` served from the graph's assets/ dir, `{:width}`
+honoured) and Logseq-style embedding of blocks that are only a `((ref))`. Index is ag-grid 33 over
+`/index.json` (title, kind, modified, blocks, refs), cached until the db changes; ~1.8s to build on
+ammdi, then instant.
 
 ## Leval 1 - Incremental publishing
 

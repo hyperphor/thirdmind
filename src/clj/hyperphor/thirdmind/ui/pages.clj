@@ -10,15 +10,16 @@
 (defn- uri-key [uri] (subs uri (inc (str/last-index-of uri "/"))))
 
 (defn ctx
-  "Render context for realm (see render/block-html), plus :realm, :aliases and :fetch (memoized t/get).
-  Build one per request."
-  [realm]
+  "Render context for realm (see render/block-html), plus :realm, :graph (Logseq graph name),
+  :aliases and :fetch (memoized t/get). Build one per request."
+  [realm graph]
   (let [aliases (ingest/db-aliases realm)
         fetch   (memoize t/get)
         page    (memoize (fn [name]
                            (let [k (ingest/page-key name), k (get aliases k k)]
                              {:key k :stub (let [p (fetch (ingest/page-uri realm k))] (or (nil? p) (:stub p)))})))]
     {:realm   realm
+     :graph   graph
      :aliases aliases
      :fetch   fetch
      :page    page
@@ -97,12 +98,17 @@
 
 ;;; Views: each returns {:title :body} or nil if not found
 
-(defn page-view [{:keys [realm] :as ctx} key]
+(defn- logseq-url [graph page-name]
+  (str "logseq://graph/" (r/url-encode graph) "?page=" (r/url-encode page-name)))
+
+(defn page-view [{:keys [realm graph] :as ctx} key]
   (let [uri (ingest/page-uri realm key)]
     (when-let [p (t/get uri)]
       {:title (:name p)
        :body  (list
                [:h1 (:name p) (when (:stub p) [:span.stub-note " (no page)"])]
+               (when (and graph (not (:stub p)))
+                 [:p.apparatus [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"]])
                (when (seq (:alias p)) [:p.aliases "Also: " (str/join ", " (:alias p))])
                (when (seq (:tags p)) [:p.tags (interpose " " (map #(page-link ctx %) (:tags p)))])
                (props p)
@@ -118,17 +124,45 @@
                       [:ul.outline [:li (block-body ctx b) (outline ctx children uri)]]
                       (backlinks ctx uri))}))))
 
-(defn index-view [ctx]
-  (let [pages    (map :obj (t/find "page" {:realm (:realm ctx)}))
-        {journals true pages false} (group-by (comp boolean :journal) (remove :stub pages))
-        link     (fn [p] [:a {:href (r/page-href (ingest/page-key (:name p)))} (:name p)])]
-    {:title "Index"
-     :body  (list [:h1 "Index"]
-                  [:div.index
-                   [:section [:h2 (count pages) " pages"]
-                    [:ul (for [p (sort-by (comp str/lower-case :name) pages)] [:li (link p)])]]
-                   [:section [:h2 (count journals) " journals"]
-                    [:ul (for [p (sort-by :journal-day > journals)] [:li (link p)])]]])}))
+;;; Index: a sortable grid (static/index.js) over rows from /index.json. Ref counts need every
+;;; block, so rows are cached until the db's counts or newest updates change.
+
+(defn- db-stamp [realm]
+  [(t/types {:realm realm :counts? true})
+   (for [ty ["page" "block" "file"]] (-> (t/find ty {:realm realm :limit 1}) first :meta :updated))])
+
+(defn- compute-index-rows [realm]
+  (let [mtimes (into {} (for [{o :obj} (t/find "file" {:realm realm})] [(:page o) (:mtime o)]))
+        refs   (frequencies (mapcat (comp distinct :refs :obj) (t/find "block" {:realm realm})))]
+    (vec (for [{:keys [uri obj]} (t/find "page" {:realm realm})
+               :let [n (get refs uri 0), mtime (mtimes uri)]
+               :when (or (not (:stub obj)) (pos? n))]
+           {:title    (:name obj)
+            :url      (r/page-href (uri-key uri))
+            :kind     (cond (:stub obj) "stub" (:journal obj) "journal" :else "page")
+            :modified (some-> mtime java.time.Instant/ofEpochMilli str (subs 0 10))
+            :blocks   (or (:blocks obj) 0)
+            :refs     n}))))
+
+(def ^:private index-cache (atom nil))
+
+(defn index-rows
+  "[{:title :url :kind :modified :blocks :refs}] for realm's pages (stubs only if referenced)."
+  [realm]
+  (let [stamp (db-stamp realm)]
+    (if (= [realm stamp] (:key @index-cache))
+      (:rows @index-cache)
+      (:rows (reset! index-cache {:key [realm stamp] :rows (compute-index-rows realm)})))))
+
+(def ^:private ag-grid "https://cdn.jsdelivr.net/npm/ag-grid-community@33.0.3/dist/ag-grid-community.min.js")
+
+(defn index-view [_ctx]
+  {:title "Index"
+   :wide  true
+   :head  (list [:script {:src ag-grid}] [:script {:src "/static/index.js"}])
+   :body  (list [:h1 "Index"]
+                [:p.apparatus [:input#index-filter {:type "search" :placeholder "Filter titles"}]]
+                [:div#index-grid])})
 
 (defn- snippet [s]
   (raw-string (-> (r/escape s) (str/replace "«" "<mark>") (str/replace "»" "</mark>"))))
