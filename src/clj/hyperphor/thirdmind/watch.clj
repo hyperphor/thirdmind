@@ -35,6 +35,7 @@
 
 (defn- fire! [{:keys [realm handlers]} rel diff]
   (doseq [[tag-uri block] (ingest/new-tags diff)
+          :let [_ (log "new tag:" (:name (t/get tag-uri)) (:name (t/get (get-in block [:obj :page]))))]
           [tag handler]   handlers
           :when (= tag-uri (ingest/page-uri realm (ingest/page-key tag)))]
     (try (handler (assoc block :tag tag :file rel))
