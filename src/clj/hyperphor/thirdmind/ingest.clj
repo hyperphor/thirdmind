@@ -128,7 +128,9 @@
 
 ;;; Incremental: one file at a time, with aliases and block ids resolved against the db.
 
-(defn- db-aliases [realm]
+(defn db-aliases
+  "{alias-key page-key} for every alias:: recorded in the db."
+  [realm]
   (into {} (for [{:keys [uri obj]} (t/find "page" {:realm realm})
                  a (:alias obj)]
              [(page-key a) (uri-key uri)])))

@@ -45,25 +45,33 @@
 
 ;;; Refs (outside code)
 
+;;; Shared with ui.render, so rendered links agree with stored refs.
+(def code-re       #"(?s)```.*?(?:```|$)|`[^`\n]*`")
+(def bracket-tag-re #"(?<=^|\s)#\[\[([^\[\]]+)\]\]")
+(def tag-re        #"(?<=^|\s)#([^\s#\[\](){},;!?\"'+][^\s#\[\](){},;!?\"']*)")
+(def wikilink-re   #"\[\[([^\[\]]+)\]\]")
+(def block-ref-re  #"\(\(([^()\s]+)\)\)")
+
+(defn trim-tag
+  "Tags may end in sentence punctuation, which isn't part of the name."
+  [tag]
+  (str/replace tag #"[.:]+$" ""))
+
 (defn strip-code
   "Remove fenced and inline code so refs inside them are ignored."
   [s]
-  (-> s
-      (str/replace #"(?s)```.*?(```|$)" "")
-      (str/replace #"`[^`\n]*`" "")))
+  (str/replace s code-re ""))
 
 (defn extract-refs
   "{:pages [names] :tags [names] :block-refs [ids]} referenced in text."
   [text]
   (let [s     (strip-code text)
-        tags  (concat (map second (re-seq #"(?<=^|\s)#\[\[([^\[\]]+)\]\]" s))
-                      (map second (re-seq #"(?<=^|\s)#([^\s#\[\](){},;!?\"'+][^\s#\[\](){},;!?\"']*)" s)))
-        ;; tags may end in sentence punctuation
-        tags  (map #(str/replace % #"[.:]+$" "") tags)
-        pages (map second (re-seq #"\[\[([^\[\]]+)\]\]" s))]
+        tags  (map trim-tag (concat (map second (re-seq bracket-tag-re s))
+                                    (map second (re-seq tag-re s))))
+        pages (map second (re-seq wikilink-re s))]
     {:pages      (vec (distinct (remove str/blank? (concat pages tags))))
      :tags       (vec (distinct (remove str/blank? tags)))
-     :block-refs (vec (distinct (map second (re-seq #"\(\(([^()\s]+)\)\)" s))))}))
+     :block-refs (vec (distinct (map second (re-seq block-ref-re s))))}))
 
 ;;; Outline
 
