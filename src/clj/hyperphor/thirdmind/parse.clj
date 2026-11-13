@@ -83,16 +83,18 @@
 (def ^:private markers #{"TODO" "DOING" "DONE" "LATER" "NOW" "WAITING" "CANCELED" "CANCELLED"})
 
 (defn- finish-block
-  "Turn accumulated lines into a block: separate properties from content."
+  "Turn accumulated lines into a block: separate properties from content. :line-nos are the
+  (0-based) file line numbers of its non-blank content lines."
   [{:keys [lines] :as b}]
-  (let [{props true content false}
+  (let [{props true content-lines false}
         (group-by (fn [{:keys [line fenced?]}] (boolean (and (not fenced?) (property-line (str/trim line)))))
                   lines)
-        content (str/trim (str/join "\n" (map :line content)))]
+        content (str/trim (str/join "\n" (map :line content-lines)))]
     (-> b
         (dissoc :lines)
         (assoc :content content
-               :props (into {} (map (comp property-line str/trim :line)) props))
+               :props (into {} (map (comp property-line str/trim :line)) props)
+               :line-nos (vec (keep #(when-not (str/blank? (:line %)) (:n %)) content-lines)))
         (cond-> (markers (first (str/split content #"\s" 2)))
           (assoc :marker (first (str/split content #"\s" 2)))))))
 
@@ -111,10 +113,13 @@
       [{} lines])))
 
 (defn parse-lines
-  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :children-of path}]}.
-  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1])."
-  [lines]
+  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :line-nos [n ...]}]}.
+  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1]).
+  first-n is the file line number of the first line (default 0)."
+  ([lines] (parse-lines lines 0))
+  ([lines first-n]
   (loop [[line & more :as ls] lines
+         n       first-n
          fenced? false
          stack   []      ; [{:width w :path p}] open ancestors
          counts  {[] 0}  ; parent path -> next child index
@@ -148,27 +153,28 @@
                 idx    (get counts parent 0)
                 path   (conj parent idx)
                 fence? (str/starts-with? (str/trim text) "```")]
-            (recur more (if fence? (not fenced?) false)
+            (recur more (inc n) (if fence? (not fenced?) false)
                    (conj stack {:width w :path path})
                    (assoc counts parent (inc idx))
-                   {:path path :lines [{:line text}]}
+                   {:path path :lines [{:line text :n n}]}
                    preamble
                    (cond-> blocks current (conj (finish-block current)))))
 
           current
-          (recur more (if fence-line? (not fenced?) fenced?) stack counts
-                 (update current :lines conj {:line (str/trim line) :fenced? (or fenced? fence-line?)})
+          (recur more (inc n) (if fence-line? (not fenced?) fenced?) stack counts
+                 (update current :lines conj {:line (str/trim line) :n n :fenced? (or fenced? fence-line?)})
                  preamble blocks)
 
           :else
-          (recur more (if fence-line? (not fenced?) fenced?) stack counts nil
-                 (conj preamble {:line line :fenced? (or fenced? fence-line?)}) blocks))))))
+          (recur more (inc n) (if fence-line? (not fenced?) fenced?) stack counts nil
+                 (conj preamble {:line line :n n :fenced? (or fenced? fence-line?)}) blocks)))))))
 
 (defn parse-file
   "Parse a Logseq .md file. Returns {:name :file :journal? :journal-day :props :blocks}."
   [^java.io.File f journal? rel-path]
-  (let [[front lines]          (split-front-matter (str/split-lines (slurp f)))
-        {:keys [props blocks]} (parse-lines lines)
+  (let [all-lines              (str/split-lines (slurp f))
+        [front lines]          (split-front-matter all-lines)
+        {:keys [props blocks]} (parse-lines lines (- (count all-lines) (count lines)))
         props                  (merge front props)
         fname    (.getName f)
         ;; non-date files in journals/ (eg backups) are treated as ordinary pages

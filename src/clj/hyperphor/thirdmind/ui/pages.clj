@@ -46,9 +46,48 @@
   (when-let [ps (seq (visible-props obj))]
     [:dl.props (for [[k v] ps] (list [:dt (name k)] [:dd (str v)]))]))
 
+;;; Times (see times.clj): :created/:updated epoch ms on blocks
+
+(def ^:private zone (java.time.ZoneId/systemDefault))
+(defn- local-date [ms] (.toLocalDate (.atZone (java.time.Instant/ofEpochMilli ms) zone)))
+(defn- fmt [pattern ms] (.format (local-date ms) (java.time.format.DateTimeFormatter/ofPattern pattern)))
+
+(defn- date-range
+  "Human range between two times, at day resolution: Jun 26, 2021 / Jun 26 – Aug 3, 2021 / ..."
+  [from to]
+  (let [[a b] [(local-date from) (local-date to)]]
+    (cond (= a b)                         (fmt "MMM d, yyyy" from)
+          (= (.getYear a) (.getYear b))   (str (fmt "MMM d" from) " – " (fmt "MMM d, yyyy" to))
+          :else                           (str (fmt "MMM d, yyyy" from) " – " (fmt "MMM d, yyyy" to)))))
+
+(defn- short-range
+  "Compact range for the margin: Jun '21 / Jun – Aug '21 / Jun '21 – Aug '23."
+  [from to]
+  (let [m (fn [ms] (fmt "MMM" ms)), y (fn [ms] (fmt "''yy" ms))]
+    (cond (= (fmt "yyyyMM" from) (fmt "yyyyMM" to)) (str (m from) " " (y from))
+          (= (fmt "yyyy" from) (fmt "yyyy" to))     (str (m from) " – " (m to) " " (y to))
+          :else                                    (str (m from) " " (y from) " – " (m to) " " (y to)))))
+
+(defn- block-time
+  "Margin date for a block, omitted when it says the same as the page's own range (ctx ::page-short)."
+  [ctx {:keys [created updated]}]
+  (when (and created (not= (short-range created updated) (::page-short ctx)))
+    [:time.block-time {:datetime (str (java.time.Instant/ofEpochMilli created))
+                       :title    (str "Created " (fmt "MMM d, yyyy" created)
+                                      (when (not= (local-date created) (local-date updated))
+                                        (str " · updated " (fmt "MMM d, yyyy" updated))))}
+     (short-range created updated)]))
+
+(defn- page-range
+  "[earliest-created latest-updated] over block entries, or nil."
+  [blocks]
+  (let [os (filter :created (map :obj blocks))]
+    (when (seq os) [(apply min (map :created os)) (apply max (map :updated os))])))
+
 (defn- block-body [ctx {:keys [obj]}]
   (let [[marker content] (r/split-marker (:marker obj) (str (:content obj)))]
     [:div.block
+     (block-time ctx obj)
      (when marker [:span {:class (str "marker " (str/lower-case marker))} marker])
      (raw-string (r/block-html ctx content))
      (props obj)]))
@@ -115,16 +154,27 @@
 (defn page-view [{:keys [realm graph] :as ctx} key]
   (let [uri (ingest/page-uri realm key)]
     (when-let [p (t/get uri)]
+      (let [blocks      (page-blocks uri)
+            [from to]   (page-range blocks)]
       {:title (r/title-text (:name p))
        :body  (list
-               [:h1 (raw-string (r/title-html (:name p))) (when (:stub p) [:span.stub-note " (no page)"])]
-               (when (and graph (not (:stub p)))
-                 [:p.apparatus [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"]])
+               [:h1 (raw-string (r/title-html (:name p)))
+                (when-let [d (:journal-day p)]
+                  [:span.weekday (.format (java.time.LocalDate/parse (str d) java.time.format.DateTimeFormatter/BASIC_ISO_DATE)
+                                          (java.time.format.DateTimeFormatter/ofPattern "EEEE"))])
+                (when (:stub p) [:span.stub-note " (no page)"])]
+               (when-not (:stub p)
+                 [:p.apparatus
+                  (when from (list [:span.page-time {:title "Earliest block created – latest block updated"}
+                                    (date-range from to)]
+                                   (when graph " · ")))
+                  (when graph [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"])])
                (when (seq (:alias p)) [:p.aliases "Also: " (str/join ", " (:alias p))])
                (when (seq (:tags p)) [:p.tags (interpose " " (map #(page-link ctx %) (:tags p)))])
                (props p)
-               (outline ctx (group-by (comp :parent :obj) (page-blocks uri)) uri)
-               (backlinks ctx uri))})))
+               (outline (cond-> ctx from (assoc ::page-short (short-range from to)))
+                        (group-by (comp :parent :obj) blocks) uri)
+               (backlinks ctx uri))}))))
 
 (defn block-view [{:keys [realm] :as ctx} id]
   (let [uri (ingest/block-uri realm id)]

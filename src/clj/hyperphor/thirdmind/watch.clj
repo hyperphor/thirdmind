@@ -4,6 +4,7 @@
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.parse :as parse]
+            [hyperphor.thirdmind.times :as times]
             [hyperphor.tunamelt.core :as t])
   (:import [java.time LocalTime]
            [java.time.format DateTimeFormatter]))
@@ -44,7 +45,7 @@
 (defn sync!
   "One pass: re-ingest files changed since known ({rel [mtime size]}), firing handlers.
   Files modified within :settle-ms are left for a later pass. Returns the updated known map."
-  [{:keys [dir realm settle-ms] :or {settle-ms 0} :as cfg} known]
+  [{:keys [dir realm settle-ms times?] :or {settle-ms 0} :as cfg} known]
   (let [disk    (scan dir)
         cutoff  (- (System/currentTimeMillis) settle-ms)
         settled (into {} (filter (fn [[_ [mtime]]] (< mtime cutoff))) disk)
@@ -54,6 +55,7 @@
               (try
                 (let [diff (ingest/update-file! dir realm rel)]
                   (log (if (disk rel) "synced" "removed") rel)
+                  (when (and times? (disk rel)) (times/update-file-times! dir realm rel))
                   (fire! cfg rel diff))
                 (catch Exception e (log "error syncing" rel (ex-message e))))
               (if-let [stamp (disk rel)] (assoc known rel stamp) (dissoc known rel)))
@@ -70,12 +72,15 @@
         (core/fresh-store! db realm)
         (ingest/ingest! dir realm)
         (log "Rebuilt:" (t/types {:counts? true}))
+        (when (:times? cfg) (log "Block times not computed; run `lein times" dir "` to backfill"))
         (recorded realm))))
 
 (defn start!
   "Init, then sync! every :interval-ms on a background thread. Returns a fn that stops it."
   [{:keys [interval-ms] :or {interval-ms 2000} :as cfg}]
-  (let [cfg     (merge {:handlers default-handlers :settle-ms interval-ms} cfg)
+  (let [cfg     (merge {:handlers default-handlers :settle-ms interval-ms
+                        :times? (times/git-repo? (:dir cfg))}
+                       cfg)
         known   (init! cfg)
         running (atom true)
         worker  (future

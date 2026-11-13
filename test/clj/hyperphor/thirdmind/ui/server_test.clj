@@ -5,6 +5,8 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
+            [hyperphor.thirdmind.times :as times]
+            [hyperphor.tunamelt.core :as t]
             [hyperphor.thirdmind.ui.server :as server]))
 
 (def realm "g")
@@ -14,6 +16,8 @@
     (let [db (str (java.io.File/createTempFile "thirdmind-ui" ".db"))]
       (try (core/fresh-store! db realm)
            (ingest/ingest! (.getPath (io/resource "graph")) realm)
+           ;; the fixture is in this repo, so it has git history to time from
+           (times/update-file-times! (.getPath (io/resource "graph")) realm "pages/ELIZA.md")
            (f)
            (finally (doseq [s ["" "-wal" "-shm"]] (.delete (io/file (str db s)))))))))
 
@@ -62,6 +66,28 @@
       (is (str/includes? b "youtube.com/embed/J3rNOAhonPw"))
       (is (str/includes? b "platform.twitter.com/widgets.js") "tweet script on pages with tweets"))
     (is (not (str/includes? (body "/page/eliza") "widgets.js")) "and not elsewhere"))
+
+  (testing "times: block margin dates, page range, journal weekday"
+    (let [b (body "/page/eliza")]
+      (is (re-find #"<span class=\"page-time\" [^>]*>\w{3} \d+, \d{4}</span>" b) "page range from git")
+      (is (not (str/includes? b "class=\"block-time\"")) "lone block's date repeats the page's, so hidden"))
+    (let [ms  #(.toEpochMilli (java.time.Instant/parse (str % "T12:00:00Z")))
+          blk #(ingest/block-uri realm (str (ingest/page-key "Plain") "~" %))
+          _   (t/put (blk "-1") (assoc (t/get (blk "-1")) :created (ms "2021-06-01") :updated (ms "2021-06-02")))
+          b   (body "/page/plain")]
+      (is (str/includes? b ">Jun 1 – Jun 2, 2021</span>") "page range")
+      (is (not (str/includes? b "class=\"block-time\"")) "block range is the page's, so hidden"))
+    (let [ms  #(.toEpochMilli (java.time.Instant/parse (str % "T12:00:00Z")))
+          blk #(ingest/block-uri realm (str (ingest/page-key "Computer Power and Human Reason") "~" %))]
+      (doseq [[path from to] [["2" "2021-06-01" "2021-06-02"] ["3" "2023-08-03" "2023-08-03"]]]
+        (t/put (blk path) (assoc (t/get (blk path)) :created (ms from) :updated (ms to))))
+      (let [b (body "/page/computer%20power%20and%20human%20reason")]
+        (is (str/includes? b ">Jun 1, 2021 – Aug 3, 2023</span>"))
+        (is (str/includes? b ">Jun &apos;21</time>"))
+        (is (str/includes? b ">Aug &apos;23</time>"))
+        (is (str/includes? b "title=\"Created Jun 1, 2021 · updated Jun 2, 2021\""))))
+    (is (not (str/includes? (body "/page/plain") "block-time")) "untimed pages show none")
+    (is (str/includes? (body "/page/jul%205th%2C%202013") "<span class=\"weekday\">Friday</span>")))
 
   (testing "search and 404"
     (is (str/includes? (body "/search" "q=weizenbaum") "<mark>"))

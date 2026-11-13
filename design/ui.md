@@ -138,3 +138,25 @@ Use Blocknote as UI component (need to get wikilinks working)
   "never write to the source graph" rule needs revisiting, at least as an opt-in.
 - Needs a markdown ⇄ Blocknote block mapping that round-trips Logseq's outline and properties
   without churn.
+
+
+# Random ideas
+
+## Self-commentary
+I want to be able to select a chunk of text (block or otherwise) and comment on it. and have that commetn be separate.
+Prob rendered as a sidenote. Or a sub-bullet point but I want the temporal flow clear.
+
+	Could just put in a subblock, but the point is I am in dialog with my earlier self and want those voices distinguished.
+
+## AskClaude
+Like current one in Logseq, but let me fucking select what I want to use for the prompt
+
+
+## Do the above, but on random web pages
+OK getting off the thirdmind topic but that's OK.
+
+Radically simple ide: web plugin that lets you select text, say to Claude ELI or whatever, have an annotation created, remembered, tracked.
+
+I just want this for me although a social version would be easy and very useful (of course this has been tried.)
+
+Something like this must exist? Would be super-easy to build.

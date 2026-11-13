@@ -19,5 +19,6 @@
   :main ^:skip-aot hyperphor.thirdmind.core
   :aliases {"search" ["run" "-m" "hyperphor.thirdmind.search"]
             "watch"  ["run" "-m" "hyperphor.thirdmind.watch"]
-            "serve"  ["run" "-m" "hyperphor.thirdmind.ui.server"]}
+            "serve"  ["run" "-m" "hyperphor.thirdmind.ui.server"]
+            "times"  ["run" "-m" "hyperphor.thirdmind.times"]}
   :jvm-opts ["--enable-native-access=ALL-UNNAMED"])

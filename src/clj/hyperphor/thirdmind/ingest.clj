@@ -40,6 +40,12 @@
 
 ;;; Graph
 
+(defn block-id
+  "Id of parsed block b on page page-name: its explicit id::, else page-key~outline-path."
+  [page-name b]
+  (or (get-in b [:props "id"])
+      (str (page-key page-name) "~" (str/join "." (:path b)))))
+
 (defn read-graph
   "Parse all pages and journals of a graph directory."
   [dir]
@@ -56,12 +62,8 @@
                          (for [p pages, a (split-list (get-in p [:props "alias"]))]
                            [(page-key a) (page-key (:name p))]))
         resolve-pg (fn [name] (let [k (page-key name)] (get aliases k k)))
-        ;; block ids: explicit id:: or page-key~outline-path
         blocks     (for [p pages, b (:blocks p)]
-                     (assoc b
-                            :page-key (page-key (:name p))
-                            :id (or (get-in b [:props "id"])
-                                    (str (page-key (:name p)) "~" (str/join "." (:path b))))))
+                     (assoc b :page-key (page-key (:name p)) :id (block-id (:name p) b)))
         id-counts  (frequencies (keep #(get-in % [:props "id"]) blocks))
         local-ids  (set (keys id-counts))
         known-ids  (fn [id] (or (local-ids id) (when-let [known? (:known-id? ctx)] (known? id))))
