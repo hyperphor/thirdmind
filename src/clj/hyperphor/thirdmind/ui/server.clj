@@ -7,7 +7,9 @@
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ui.pages :as pages]
             [hyperphor.tunamelt.core :as t]
-            [org.httpkit.server :as http])
+            [org.httpkit.server :as http]
+            [hyperphor.multitool.cljcore :as ju]
+            )
   (:import [java.net URLConnection URLDecoder]))
 
 (defn- decode [s] (URLDecoder/decode (str/replace s "+" "%2B") "UTF-8"))
@@ -108,4 +110,6 @@
     (t/configure! {:store db :realm realm})
     (http/run-server (handler {:realm realm :dir dir :graph (.getName (io/file dir))}) {:port port})
     (println (str "Serving " db " at http://localhost:" port "/"))
+    ;; Smart enough to be a no-op on server
+    (ju/open-url (format "http://localhost:%s" port))
     @(promise)))

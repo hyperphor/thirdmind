@@ -100,13 +100,6 @@ embed [[page]] as a link (full page embed not yet), sidenote inline; others show
 ### Level 0.3
 - images need an expand / popout affordancve of some sort
 
-### Times
-OK, this one is more complicated. I want blocks annotated with their
-time range (creation - last update). Visually this should be subtle, computationally it might need to be derived from github history and stored in db
-
-Also pages should show a time range (goddinpotty already does this)
-
-And on journal pages include the day of the week
 
 
 ## Leval 1 - Incremental publishing
