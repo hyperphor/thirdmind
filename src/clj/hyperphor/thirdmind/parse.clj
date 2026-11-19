@@ -113,8 +113,9 @@
       [{} lines])))
 
 (defn parse-lines
-  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :line-nos [n ...]}]}.
-  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1]).
+  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :start n :line-nos [n ...]}]}.
+  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1]); :start is
+  the bullet's line number (absent on a preamble block).
   first-n is the file line number of the first line (default 0)."
   ([lines] (parse-lines lines 0))
   ([lines first-n]
@@ -156,7 +157,7 @@
             (recur more (inc n) (if fence? (not fenced?) false)
                    (conj stack {:width w :path path})
                    (assoc counts parent (inc idx))
-                   {:path path :lines [{:line text :n n}]}
+                   {:path path :start n :lines [{:line text :n n}]}
                    preamble
                    (cond-> blocks current (conj (finish-block current)))))
 
