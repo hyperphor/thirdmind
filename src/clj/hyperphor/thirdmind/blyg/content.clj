@@ -208,3 +208,19 @@
         src  (when attribution? (source-url ctx uri))]
     (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
         (absolutize-html base-url))))
+
+(defn thread-html
+  "content_html of a thread: attribution, own text, then one blockquote per segment, in order:
+  [:child entry] (an own item) or [:remote snapshot] (another blyg's, with its origin)."
+  [{:keys [base-url] :as ctx} uri segments]
+  (let [quote (fn [[kind e]]
+                (if (= kind :remote)
+                  [:blockquote.blyg-transclusion {:data-blyg-id (:id e) :data-blyg-version (:version e)
+                                                  :data-blyg-origin (:origin e)}
+                   (raw-string (:content-html e))]
+                  [:blockquote.blyg-transclusion {:data-blyg-id (:blyg-id e) :data-blyg-version (:version e)}
+                   (raw-string (:content-html e))]))
+        body  (into [:div [:div (own-hiccup ctx uri)]] (map quote segments))
+        src   (source-url ctx uri)]
+    (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
+        (absolutize-html base-url))))

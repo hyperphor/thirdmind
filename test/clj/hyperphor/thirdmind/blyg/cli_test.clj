@@ -29,3 +29,26 @@
       (finally
         (doseq [f (reverse (file-seq dir))] (.delete ^java.io.File f))
         (.delete state)))))
+
+(deftest push-is-scoped
+  (let [tmp    #(.toFile (java.nio.file.Files/createTempDirectory % (make-array java.nio.file.attribute.FileAttribute 0)))
+        remote (tmp "blyg-remote") repo (tmp "blyg-repo")
+        sh     (fn [d & args] (apply clojure.java.shell/sh (concat args [:dir (str d)])))
+        f      #(clojure.java.io/file repo %)]
+    (try
+      (sh remote "git" "init" "-q" "--bare")
+      (sh repo "git" "init" "-q")
+      (sh repo "git" "config" "user.email" "t@example.com") (sh repo "git" "config" "user.name" "t")
+      (clojure.java.io/make-parents (f "site/blyg/x.json")) (spit (f "site/blyg/x.json") "1") (spit (f "other.txt") "a")
+      (sh repo "git" "add" ".") (sh repo "git" "commit" "-qm" "init")
+      (sh repo "git" "remote" "add" "website" (str remote))
+      (sh repo "git" "push" "-q" "website" "HEAD:refs/heads/main") (sh repo "git" "branch" "-u" "website/main")
+      (spit (f "site/blyg/x.json") "2") (spit (f "site/blyg/y.json") "new") (spit (f "other.txt") "b")
+      (sh repo "git" "add" "other.txt")
+      (is (= :pushed (cli/push! repo "site/blyg" "website")))
+      (is (= ["site/blyg/x.json" "site/blyg/y.json"]
+             (clojure.string/split-lines (:out (sh repo "git" "show" "--name-only" "--format=" "HEAD")))))
+      (is (= "M  other.txt\n" (:out (sh repo "git" "status" "--short"))) "other staged work left staged, uncommitted")
+      (is (= (:out (sh repo "git" "rev-parse" "HEAD")) (:out (sh remote "git" "rev-parse" "main"))))
+      (is (= :unchanged (cli/push! repo "site/blyg" "website")))
+      (finally (doseq [d [remote repo], x (reverse (file-seq d))] (.delete ^java.io.File x))))))

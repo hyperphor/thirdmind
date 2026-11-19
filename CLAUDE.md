@@ -36,7 +36,10 @@ src/clj/hyperphor/thirdmind/
   blyg/content.clj — #blyg block → content_md / content_html (site links, privacy)
   blyg/wire.clj    — protocol 0.3 wire format (ids, hash, versions, tombstones, pins, JSON, feed);
                      pure: `surface` returns {path text}
-  blyg/cli.clj     — `lein blyg preview | parity`
+  blyg/publish.clj — the publisher: #blyg blocks → state entries (by :tmid) → versions
+  blyg/migrate.clj — import goddinpotty's .blyg-state.edn (by Logseq uuid) into ThirdMind's
+  blyg/pages.clj   — archive and permalink HTML, filled into the live pages as templates
+  blyg/cli.clj     — `lein blyg preview | import | publish | diff | push | parity`
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```

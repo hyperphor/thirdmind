@@ -46,7 +46,7 @@ Seems to do some interesting quote/respond/stub but I just don't understand any 
   top-level, the rest promoted thread children. It is the one irreplaceable artifact: blyg-ids,
   versions and changelogs can't be rebuilt from the published surface.
 - Served at `https://ammdi.hyperphor.com/blyg/`, written into `hyperphor-git/ammdi/blyg/` by the
-  goddinpotty build, deployed by `bin/publish-ammdi.sh` (daily, launchd; commit + push scoped to
+  goddinpotty build, deployed by `bin/publish-ammdi.sh` (meant for daily launchd, but run by hand; commit + push scoped to
   `ammdi/`).
 
 ## Constraints that shape the plan
@@ -68,7 +68,8 @@ Seems to do some interesting quote/respond/stub but I just don't understand any 
 5. **The live state uses more than fragments.** 3 items have pinned versions (their
    `items/{id}/v{n}.json` must stay 200), 16 carry transclusions, there are remote snapshots, and
    20 items have been syndicated. No reply stubs yet.
-6. **goddinpotty is still publishing daily** (launchd `publish-ammdi.sh`), and the state file
+6. **goddinpotty is still publishing** (by hand: `bin/publish-ammdi.sh` has no launchd job
+   installed, correcting an earlier note here), and the state file
    changes with it. Anything that writes to the graph or to `/blyg/` before goddinpotty's
    blygger is switched off risks duplicates (a new uuid → a new item → syndicated to
    Mastodon/Bluesky).
@@ -168,6 +169,10 @@ blocks when a page changes.
 - Migration dry run: map the 415 entries to current blocks (transit cache, then content) and
   report exact / content-matched / ambiguous / unmatched, plus how many would differ in
   content_md if re-derived. Go/no-go for D2.
+
+**Status 2026-11-19:** phase 0 and phase 1 are done, and cut-over is prepared but not run. See
+`blyg-cutover.md` for the checklist and the dry-run numbers. Still to do: titles for new items,
+fetching snapshots for new replies, and syndication.
 
 **1. Publisher, parity with goddinpotty for everything the live state uses:** fragments, threads,
 transclusions, pins (incl. `#blyg-pin`-only blocks as candidates), remote snapshots carried
