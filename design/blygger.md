@@ -161,6 +161,10 @@ blocks when a page changes.
   ancestors or page, and private children dropped; `#blyg` overrides mere unreachability.
 - Port the wire pieces nearly verbatim: base32 ids, sha256 content hash, item/manifest/index
   JSON, feed.xml, tombstones.
+  **Done: `blyg/wire.clj`.** Same entry shape as goddinpotty's state, so imported entries pass
+  through as is. `lein blyg parity` regenerates the surface from `.blyg-state.edn` and diffs it
+  against the live `/blyg/`: all 431 files match (JSON parsed-equal, feed.xml byte-equal).
+  Not ported: the HTML archive/permalink pages (site look, phase 1), syndication, remotes.
 - Migration dry run: map the 415 entries to current blocks (transit cache, then content) and
   report exact / content-matched / ambiguous / unmatched, plus how many would differ in
   content_md if re-derived. Go/no-go for D2.

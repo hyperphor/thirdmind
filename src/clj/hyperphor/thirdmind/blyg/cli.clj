@@ -1,11 +1,15 @@
 (ns hyperphor.thirdmind.blyg.cli
   "`lein blyg preview <graph-dir> --goddinpotty <config.edn> [--db path] [--out file]`: render every
-  #blyg block to one local HTML page. Reads the db; writes only the preview file."
-  (:require [clojure.java.io :as io]
+  #blyg block to one local HTML page. Reads the db; writes only the preview file.
+  `lein blyg parity <state.edn> <live-blyg-dir>`: does wire/surface reproduce a live surface? Read-only."
+  (:require [clojure.data.json :as json]
+            [clojure.edn :as edn]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [hiccup.util :refer [raw-string]]
             [hiccup2.core :as h]
             [hyperphor.thirdmind.blyg.content :as c]
+            [hyperphor.thirdmind.blyg.wire :as w]
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.tunamelt.core :as t]))
@@ -78,12 +82,36 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
                              (for [it items] (item-view ctx realm it))]])))
     (count items)))
 
+(defn parity
+  "Paths where (wire/surface state) differs from the .json/.xml files under live-dir (JSON
+  compared parsed); manifest fields come from the live blyg.json. {:ours n :live n :differ [...]}"
+  [state-file live-dir]
+  (let [dir   (str (str/replace live-dir #"/+$" "") "/")
+        live  (into {} (for [^java.io.File f (file-seq (io/file dir)) :when (.isFile f)
+                             :let [p (subs (.getPath f) (count dir))]
+                             :when (re-find #"\.(json|xml)$" p)]
+                         [p (slurp f)]))
+        m     (json/read-str (live "blyg.json") :key-fn keyword)
+        ours  (w/surface (:site m) {:title (:title m) :author (:author m) :generator (:generator m)
+                                    :generator-url (:generator_url m)}
+                         (:items (edn/read-string (slurp state-file))))
+        same? (fn [p] (let [a (ours p) b (live p)]
+                        (and a b (if (str/ends-with? p ".json") (= (json/read-str a) (json/read-str b)) (= a b)))))]
+    {:ours (count ours) :live (count live)
+     :differ (vec (sort (remove same? (distinct (concat (keys ours) (keys live))))))}))
+
 (defn -main [& args]
+  (when (= "parity" (first args))
+    (let [{:keys [ours live differ]} (parity (nth args 1) (nth args 2))]
+      (println ours "files generated," live "live," (count differ) "differ")
+      (doseq [p differ] (println "  " p))
+      (System/exit (if (seq differ) 1 0))))
   (let [[cmd dir & more] args
         opts (into {} (map vec (partition 2 more)))
         gp   (opts "--goddinpotty")]
     (when-not (and (= cmd "preview") dir gp)
       (println "Usage: lein blyg preview <graph-dir> --goddinpotty <config.edn> [--db path] [--out file]")
+      (println "       lein blyg parity <state.edn> <live-blyg-dir>")
       (System/exit 1))
     (let [realm (core/realm-for dir)
           db    (or (opts "--db") (str realm ".db"))
