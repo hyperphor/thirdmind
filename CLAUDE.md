@@ -21,7 +21,11 @@ src/clj/hyperphor/thirdmind/
                 update-file! (incremental, one file) and new-tags
   core.clj    — -main: fresh db, ingest, report; outline, most-referenced
   search.clj  — `lein search`: t/search (FTS) hits grouped into pages
-  watch.clj   — `lein watch`: poll graph, sync changed files, run tag handlers
+  watch.clj   — `lein watch [--write]`: poll graph, sync changed files, run tag handlers
+                and (with --write) actions: detectors over each file's diff
+  graph_write.clj — the only graph write path: wait for quiet, re-find block by content, atomic write
+  smart_url.clj   — bare URL newly typed → [title](url)
+  ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```
 
