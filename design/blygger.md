@@ -119,6 +119,14 @@ blocks when a page changes.
 - **Gaps**: changes made while ThirdMind isn't watching (git pull, Logseq on another machine)
   arrive as one big diff; matching still applies, just with more ambiguity. Git history (as in
   `times`) can disambiguate later if needed.
+- **Replay result (go).** `identity.clj` matches by content alone; `lein replay-ids` replays
+  ammdi's git history and scores it against `id::` uuids, which the matcher never sees
+  (non-trivial blocks only). Consecutive versions (9073 pairs): unchanged 100%, moved 99.99%,
+  edited 98.2% kept, with 6 of 2735 edits getting a wrong id, all merges or splits. Blocks
+  rewritten beyond recognition (similarity < 0.5) mostly get a new id, as intended. Ten
+  versions apart (ThirdMind not watching): about the same. Not yet measured: cross-page moves.
+- **Not decided yet**: whether the minted id becomes the block URI or stays a separate
+  attribute next to `page~path` (which `:parent`, `:block-refs`, the UI and `times` use now).
 - Accepting some drift: an id lost to a mis-match means a published item looks withdrawn and a
   new one appears. For blyg that's survivable (withdrawal is opt-in, so the old item just stops
   updating) but worth reporting in `lein blyg --dry-run`.

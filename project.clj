@@ -21,5 +21,6 @@
   :aliases {"search" ["run" "-m" "hyperphor.thirdmind.search"]
             "watch"  ["run" "-m" "hyperphor.thirdmind.watch"]
             "serve"  ["run" "-m" "hyperphor.thirdmind.ui.server"]
-            "times"  ["run" "-m" "hyperphor.thirdmind.times"]}
+            "times"  ["run" "-m" "hyperphor.thirdmind.times"]
+            "replay-ids" ["run" "-m" "hyperphor.thirdmind.identity-replay"]}
   :jvm-opts ["--enable-native-access=ALL-UNNAMED"])

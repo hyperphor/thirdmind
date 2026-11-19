@@ -25,6 +25,8 @@ src/clj/hyperphor/thirdmind/
                 and (with --write) actions: detectors over each file's diff
   graph_write.clj — the only graph write path: wait for quiet, re-find block by content, atomic write
   smart_url.clj   — bare URL newly typed → [title](url)
+  identity.clj    — block identity: match a page's old blocks to new by content
+                    (`lein replay-ids <repo>` scores it on git history)
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```
