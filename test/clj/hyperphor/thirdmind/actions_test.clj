@@ -3,6 +3,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hyperphor.thirdmind.ask-claude :as ac]
+            [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.parse :as parse]
             [hyperphor.thirdmind.smart-url :as su]
             [hyperphor.thirdmind.watch :as watch]
@@ -71,7 +72,7 @@
           (f))
         (finally
           (doseq [c (reverse (file-seq dir))] (.delete ^java.io.File c))
-          (doseq [suffix ["" "-wal" "-shm"]] (.delete (io/file (str db suffix)))))))))
+          (core/delete-store-files! db))))))
 
 (defn- write! [rel content]
   (let [f (io/file (:dir *cfg*) rel)]

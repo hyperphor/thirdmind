@@ -4,6 +4,7 @@
             [hyperphor.thirdmind.ask-claude :as ask-claude]
             [hyperphor.thirdmind.claude :as claude]
             [hyperphor.thirdmind.core :as core]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.parse :as parse]
             [hyperphor.thirdmind.smart-url :as smart-url]
@@ -84,8 +85,9 @@
   (let [disk    (scan dir)
         cutoff  (- (System/currentTimeMillis) settle-ms)
         settled (into {} (filter (fn [[_ [mtime]]] (< mtime cutoff))) disk)
-        changed (concat (for [[rel stamp] settled :when (not= stamp (known rel))] rel)
-                        (remove disk (keys known)))]
+        ;; removals first, so a renamed file's ids are orphaned before its new name looks for them
+        changed (concat (remove disk (keys known))
+                        (for [[rel stamp] settled :when (not= stamp (known rel))] rel))]
     (reduce (fn [known rel]
               (try
                 (let [diff (ingest/update-file! dir realm rel)]
@@ -102,6 +104,7 @@
   "Bring the configured store up to date with dir; returns the known map for sync!.
   A db without file records (eg from `lein run`, or new) is rebuilt from scratch, without firing handlers."
   [{:keys [dir realm db] :as cfg}]
+  (ids/open! (ids/path-for db))
   (if (seq (t/find "file" {:realm realm :limit 1}))
     (sync! cfg (recorded realm))
     (do (log "No file records in" db "- rebuilding from" dir)

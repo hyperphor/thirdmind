@@ -2,6 +2,7 @@
   "Turn a parsed Logseq graph into Tunamelt page and block objects."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.parse :as parse]
             [hyperphor.tunamelt.core :as t])
   (:import [java.net URLEncoder]))
@@ -89,7 +90,8 @@
                (seq ref-keys)   (assoc :refs (mapv #(page-uri realm %) ref-keys))
                (seq tag-keys)   (assoc :tags (mapv #(page-uri realm %) tag-keys))
                (seq block-refs) (assoc :block-refs (mapv #(block-uri realm %) (filter known-ids block-refs)))
-               marker           (assoc :marker marker))]))
+               marker           (assoc :marker marker)
+               (:tmid b)        (assoc :tmid (:tmid b)))]))
         block-objs (doall block-objs)
         page-objs  (for [{:keys [name file journal? journal-day props blocks]} pages
                          :let [tags (map resolve-pg (split-list (get props "tags")))]]
@@ -123,7 +125,7 @@
 (defn ingest!
   "Read the graph at dir and store it in the configured Tunamelt store under realm. Returns the report."
   [dir realm]
-  (let [pages (read-graph dir)
+  (let [pages (ids/assign-all! realm (read-graph dir))
         {:keys [objects report]} (graph->objects realm pages)]
     (t/put-many (concat objects (map #(file-record dir realm (:file %) (:name %)) pages)))
     report))
@@ -149,7 +151,8 @@
         old-page (some-> old-puri t/get)
         old      (if old-puri (page-blocks old-puri) [])
         f        (io/file dir rel)
-        parsed   (when (.isFile f) (parse/parse-file f (str/starts-with? rel "journals/") rel))
+        parsed   (when (.isFile f)
+                   (ids/assign-page! realm rel (parse/parse-file f (str/starts-with? rel "journals/") rel)))
         new-puri (some->> parsed :name page-key (page-uri realm))
         objects  (when parsed
                    (->> (:objects (graph->objects realm [parsed]
@@ -167,8 +170,9 @@
       ;; a page still referenced elsewhere reverts to a stub
       (when (seq (t/referrers old-puri))
         (t/put old-puri {:name (:name old-page) :stub true})))
-    (when parsed
-      (t/put-many (conj objects (file-record dir realm rel (:name parsed)))))
+    (if parsed
+      (t/put-many (conj objects (file-record dir realm rel (:name parsed))))
+      (ids/gone! realm rel))
     {:page (or new-puri old-puri)
      :old  old
      :new  (vec (for [[u o] objects :when (str/includes? u "/block/")] {:uri u :obj o}))}))

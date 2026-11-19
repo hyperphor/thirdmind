@@ -125,8 +125,14 @@ blocks when a page changes.
   edited 98.2% kept, with 6 of 2735 edits getting a wrong id, all merges or splits. Blocks
   rewritten beyond recognition (similarity < 0.5) mostly get a new id, as intended. Ten
   versions apart (ThirdMind not watching): about the same. Not yet measured: cross-page moves.
-- **Not decided yet**: whether the minted id becomes the block URI or stays a separate
-  attribute next to `page~path` (which `:parent`, `:block-refs`, the UI and `times` use now).
+- **Wired in (decided: a separate attribute).** Block objects carry `:tmid`; the URI stays
+  `page~path`. Ids live in `<db>.ids.db` (`ids.clj`), which `fresh-store!` leaves alone: one
+  record per graph *file* (so `title::` edits and page-name collisions don't disturb them),
+  matched against on every ingest, so a rebuild and an unwatched gap are the same case. A
+  vanished file's record becomes an orphan; a file with no record (a rename) takes back ids
+  from orphan blocks with unique, non-trivial content. On ammdi: stable across rebuilds,
+  about 5 s added to a full ingest. Not yet: cross-page moves of single blocks, ids for UI
+  edits (exact carry-over), backup of the ids db.
 - Accepting some drift: an id lost to a mis-match means a published item looks withdrawn and a
   new one appears. For blyg that's survivable (withdrawal is opt-in, so the old item just stops
   updating) but worth reporting in `lein blyg --dry-run`.

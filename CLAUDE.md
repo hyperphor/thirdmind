@@ -27,6 +27,8 @@ src/clj/hyperphor/thirdmind/
   smart_url.clj   — bare URL newly typed → [title](url)
   identity.clj    — block identity: match a page's old blocks to new by content
                     (`lein replay-ids <repo>` scores it on git history)
+  ids.clj         — ThirdMind block ids (:tmid on block objects), in <db>.ids.db, which
+                    rebuilds keep; one record per graph file, orphaned when the file goes
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```

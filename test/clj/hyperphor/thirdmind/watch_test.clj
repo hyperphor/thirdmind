@@ -1,6 +1,7 @@
 (ns hyperphor.thirdmind.watch-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.watch :as watch]
             [hyperphor.tunamelt.core :as t]))
@@ -30,7 +31,7 @@
         (f))
       (finally
         (delete-tree dir)
-        (doseq [suffix ["" "-wal" "-shm"]] (.delete (io/file (str db suffix))))))))
+        (core/delete-store-files! db)))))
 
 (use-fixtures :each watch-fixture)
 

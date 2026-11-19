@@ -17,8 +17,7 @@
       (core/fresh-store! (str file) realm)
       (binding [*report* (ingest/ingest! graph-dir realm)] (f))
       (finally
-        (doseq [suffix ["" "-wal" "-shm"]]
-          (.delete (io/file (str file suffix))))))))
+        (core/delete-store-files! file)))))
 
 (use-fixtures :once graph-fixture)
 

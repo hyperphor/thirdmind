@@ -19,7 +19,7 @@
            ;; the fixture is in this repo, so it has git history to time from
            (times/update-file-times! (.getPath (io/resource "graph")) realm "pages/ELIZA.md")
            (f)
-           (finally (doseq [s ["" "-wal" "-shm"]] (.delete (io/file (str db s)))))))))
+           (finally (core/delete-store-files! db))))))
 
 (def handler (delay (server/handler {:realm realm :dir (.getPath (io/resource "graph")) :graph "graph"})))
 (defn- get* [uri & [qs]] (@handler {:uri uri :query-string qs}))
