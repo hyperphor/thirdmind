@@ -37,9 +37,13 @@
 (defn block-href [id] (str "/block/" (url-encode id)))
 
 (defn- page-link [ctx name text class]
-  (let [key (:key ((:page ctx) name))]
-    (format "<a class=\"%s%s\" href=\"%s\">%s</a>"
-            class (if (:stub ((:page ctx) name)) " stub" "") (page-href key) (label text))))
+  (if-let [href-of (:page-href ctx)]
+    (if-let [href (href-of name)]
+      (format "<a class=\"%s\" href=\"%s\">%s</a>" class (escape href) (label text))
+      (label text))
+    (let [key (:key ((:page ctx) name))]
+      (format "<a class=\"%s%s\" href=\"%s\">%s</a>"
+              class (if (:stub ((:page ctx) name)) " stub" "") (page-href key) (label text)))))
 
 (defn- plain-text
   "First line of block content with refs reduced to their names, for block-ref labels."
@@ -51,7 +55,9 @@
 
 (defn- block-link [ctx id]
   (if-let [content ((:block ctx) id)]
-    (format "<a class=\"bref\" href=\"%s\">%s</a>" (block-href id) (label (plain-text content)))
+    (if-let [href (if-let [f (:block-href ctx)] (f id) (block-href id))]
+      (format "<a class=\"bref\" href=\"%s\">%s</a>" (escape href) (label (plain-text content)))
+      (format "<span class=\"bref\">%s</span>" (label (plain-text content))))
     (format "<span class=\"bref missing\">((%s))</span>" (escape id))))
 
 ;;; Images and asset links. Logseq paths (../assets/...) often hold spaces and ?, which
@@ -163,7 +169,8 @@
   "HTML for a block's content (marker excluded). A block that is only ((id)) shows the target
   block's content in place, as Logseq does. ctx:
   :page  (fn [name] {:key canonical-page-key :stub bool})
-  :block (fn [id] content or nil)"
+  :block (fn [id] content or nil)
+  :page-href, :block-href (optional) (fn [name-or-id] href, or nil for plain text) replace UI links"
   [ctx content]
   (let [id     (second (or (re-matches parse/block-ref-re (str/trim content))
                            (re-matches #"\{\{embed\s+\(\(([^()\s]+)\)\)\s*\}\}" (str/trim content))))

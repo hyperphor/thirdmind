@@ -148,6 +148,15 @@ blocks when a page changes.
   goddinpotty's exact URL scheme (page-name slugs, not ThirdMind's percent-encoded keys).
   Which pages count as published (so links aren't dead or private): read the set of files
   actually present in `hyperphor-git/ammdi/`, until ThirdMind does general publishing.
+- **Done: `blyg/content.clj`.** Fragment and thread `content_md`, fragment `content_html`
+  (ThirdMind's renderer, with `:page-href` hooks so links go to the site, or are plain text
+  for unpublished pages). On ammdi, 197 of 342 live fragments come out byte-identical and
+  245 within 90% similarity (by content pairing; the migration dry run will pair properly).
+  Deliberate differences from goddinpotty: emphasis kept (it drops `*x*`/`**x**` markers),
+  images made absolute and Logseq size attrs dropped (it leaves `../assets/` paths that break
+  in other readers). Exit tags come from the caller; nothing personal is hard-coded. The
+  attribution anchor is the block's `id::` uuid if it has one, else no anchor. Not yet:
+  titles, thread HTML (needs child entries: phase 1), reply stubs.
 - Privacy as goddinpotty: explicit exit tags (`#Private`, `#ExitPoint`) on the block, its
   ancestors or page, and private children dropped; `#blyg` overrides mere unreachability.
 - Port the wire pieces nearly verbatim: base32 ids, sha256 content hash, item/manifest/index

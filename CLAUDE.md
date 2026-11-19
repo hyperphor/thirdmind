@@ -10,6 +10,8 @@ ThirdMind: side process + knowledge store for a Logseq graph. Spec:
 lein test
 lein run /opt/mt/repos/ammdi     # real graph; treat it as read-only
 lein watch /opt/mt/repos/ammdi   # side process; Ctrl-C to stop
+lein blyg preview /opt/mt/repos/ammdi --goddinpotty ../../goddinpotty/resources/ammdi-config.edn
+                                 # #blyg items → target/blyg-preview.html (reads the db only)
 ```
 
 ## Layout
@@ -29,6 +31,8 @@ src/clj/hyperphor/thirdmind/
                     (`lein replay-ids <repo>` scores it on git history)
   ids.clj         — ThirdMind block ids (:tmid on block objects), in <db>.ids.db, which
                     rebuilds keep; one record per graph file, orphaned when the file goes
+  blyg/content.clj — #blyg block → content_md / content_html (site links, privacy)
+  blyg/cli.clj     — `lein blyg preview`; site URL, output dir, exit tags from goddinpotty's config
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```
