@@ -1,0 +1,16 @@
+;; ThirdMind config for the AMMDI graph. Commands take it as their first argument, or find it as the
+;; only file in config/ (or $THIRDMIND_CONFIG): lein watch, lein serve, lein times, lein blyg ...
+{:graph  "/opt/mt/repos/ammdi"
+ :db     "ammdi.db"                     ; relative to the thirdmind dir
+ :port   2284                           ; lein serve
+ :write? true                           ; lein watch runs graph-writing actions (smart URLs, #AskClaude)
+
+ :blygger
+ {:goddinpotty "/opt/mt/repos/goddinpotty/resources/ammdi-config.edn" ; site URL, output dir, exit tags
+  :state       "/opt/mt/repos/ammdi/.thirdmind-blyg-state.edn"
+  :ids-backup  "/opt/mt/repos/ammdi/.thirdmind-ids.edn"
+  :site-repo   "/opt/mt/repos/hyperphor-git"
+  :mount       "ammdi/blyg"                                       ; the blyg's dir in site-repo
+  :remote      "website"
+  :auto-publish? true                                             ; lein watch publishes + pushes #blyg edits
+  :quiet-ms    120000}}                                           ; ... once they've been still this long

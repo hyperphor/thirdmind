@@ -10,10 +10,10 @@ ThirdMind: side process + knowledge store for a Logseq graph. Spec:
 lein test
 lein run /opt/mt/repos/ammdi     # real graph; treat it as read-only
 lein watch /opt/mt/repos/ammdi   # side process; Ctrl-C to stop
-lein blyg preview /opt/mt/repos/ammdi --goddinpotty ../../goddinpotty/resources/ammdi-config.edn
-                                 # #blyg items → target/blyg-preview.html (reads the db only)
-lein blyg parity /opt/mt/repos/ammdi/.blyg-state.edn ../../hyperphor-git/ammdi/blyg
-                                 # does blyg/wire reproduce the live surface from that state?
+lein watch | lein serve | lein times   # with no args: graph, db, port etc. from config/ammdi.edn
+lein blyg publish [--dry-run]    # #blyg items → the site repo's blyg dir (settings: config :blygger)
+lein blyg push                   # commit + push only that dir
+lein blyg preview                # #blyg items → target/blyg-preview.html (reads the db only)
 ```
 
 ## Layout
@@ -23,10 +23,12 @@ src/clj/hyperphor/thirdmind/
   parse.clj   — line-based Logseq markdown parser (names, properties, outline, refs)
   ingest.clj  — parsed graph → Tunamelt page/block/file objects; ref/alias resolution;
                 update-file! (incremental, one file) and new-tags
+  config.clj  — per-graph config (config/ammdi.edn): :graph :db :port :write? :blygger {...}
   core.clj    — -main: fresh db, ingest, report; outline, most-referenced
   search.clj  — `lein search`: t/search (FTS) hits grouped into pages
-  watch.clj   — `lein watch [--write]`: poll graph, sync changed files, run tag handlers
-                and (with --write) actions: detectors over each file's diff
+  watch.clj   — `lein watch [--write]`: poll graph, sync changed files, run tag handlers,
+                (with --write) actions: detectors over each file's diff, and (with
+                :blygger :auto-publish?) blyg publish + push once #blyg edits go quiet
   graph_write.clj — the only graph write path: wait for quiet, re-find block by content, atomic write
   smart_url.clj   — bare URL newly typed → [title](url)
   identity.clj    — block identity: match a page's old blocks to new by content

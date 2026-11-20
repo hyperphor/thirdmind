@@ -19,6 +19,13 @@
   (is (empty? (su/bare-urls "x?u=https://a.org/y")) "not embedded in another URL")
   (is (= [[4 19 "https://a.org/x"]] (su/bare-url-spans "see https://a.org/x and [y](https://a.org/x)"))))
 
+(deftest url-titles
+  (is (= "Brilliant Basics (dodcio.defense.gov)" (su/url-title "https://dodcio.defense.gov/BrilliantBasics/")))
+  (is (= "dodaf20 ontology1 (dodcio.defense.gov)"
+         (su/url-title "https://dodcio.defense.gov/Library/DoD-Architecture-Framework/dodaf20_ontology1/")))
+  (is (= "my page (example.com)" (su/url-title "https://www.example.com/a/my-page.html?x=1")))
+  (is (= "example.com" (su/url-title "https://example.com/"))))
+
 (deftest titles
   (is (= "Hello & World" (su/html-title "<html><title>\n Hello &amp;\n World </title></html>")))
   (is (= "OG one" (su/html-title "<meta property=\"og:title\" content=\"OG one\"><title>Other</title>")))
@@ -96,6 +103,17 @@
           (watch/sync! *cfg* known)
           (is (= [[:fetch "https://b.org/new"]] @calls))
           (is (str/includes? (read-page "pages/Links.md") "- plain https://b.org/kept and [Title of new](https://b.org/new)\n")))))))
+
+(deftest smart-url-after-more-typing
+  (let [known  (watch/init! *cfg*)
+        queued (atom [])
+        cfg    (assoc *cfg* :run #(swap! queued conj %))]
+    (write! "pages/Typed.md" "- NATO uses https://a.org/bfo\n")
+    (watch/sync! cfg known)
+    (write! "pages/Typed.md" "- NATO uses https://a.org/bfo as a standard. It isn't going well.\n")
+    (run! #(%) @queued)
+    (is (= "- NATO uses [Title of bfo](https://a.org/bfo) as a standard. It isn't going well.\n"
+           (read-page "pages/Typed.md")))))
 
 (deftest ask-claude-action
   (let [known (watch/init! *cfg*)]

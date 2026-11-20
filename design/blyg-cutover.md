@@ -110,8 +110,9 @@ It refuses to run if a new item looks like an unmatched old one (`--allow-new` o
 ## 5. Afterwards
 
 - After the next goddinpotty build, check again that `/blyg/` is untouched.
-- To publish an edit, run `publish` followed by `push` (step 4). The watcher hook that does this
-  automatically is phase 2.
+- Edits publish themselves: with `:blygger {:auto-publish? true}`, `lein watch` publishes and
+  pushes once #blyg blocks (or blocks under them) have been still for `:quiet-ms` (default 2 min),
+  and once at startup. By hand: `lein blyg publish`, then `lein blyg push`.
 
 ## Dry run, 2026-11-19 (scratch db; live site and state only read)
 
@@ -142,5 +143,4 @@ It refuses to run if a new item looks like an unmatched old one (`--allow-new` o
   auto-committed both.
 - Publish into the local `hyperphor-git/ammdi/blyg`: 7 new items (none on the live site
   before), 3 bumps (real edits), nothing else. Parity of state against the dir: 438/438 files.
-- Not done: the push (`lein blyg push /opt/mt/repos/hyperphor-git --path ammdi/blyg --remote
-  website`), which waits on sorting out the other unpushed site changes.
+- Pushed: `hyperphor-git` master is on `website` (7c2db90, 2026-11-19).

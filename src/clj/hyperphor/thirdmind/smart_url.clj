@@ -87,17 +87,37 @@
                (re-find #"(?is)content=[\"']([^\"']*)[\"']") second clean-title)
       (some->> (re-find #"(?is)<title[^>]*>(.*?)</title>" html) second clean-title)))
 
+;;; Some sites (eg dodcio.defense.gov) refuse any non-browser client, so for a refusal the
+;;; title is made from the URL instead.
+
+(defn url-title
+  "Link text from url itself: its last path segment, made readable, and the host.
+  https://dodcio.defense.gov/BrilliantBasics/ → \"Brilliant Basics (dodcio.defense.gov)\"."
+  [url]
+  (let [u    (java.net.URI. url)
+        host (str/replace (str (.getHost u)) #"^www\." "")
+        seg  (some-> (last (remove str/blank? (str/split (str (.getRawPath u)) #"/")))
+                     (java.net.URLDecoder/decode "UTF-8")
+                     (str/replace #"(?i)\.(html?|php|aspx?|jsp)$" "")
+                     (str/replace #"[_+-]+" " ")
+                     (str/replace #"([a-z])([A-Z])" "$1 $2")
+                     str/trim clean-title)]
+    (if (seq seg) (str seg " (" host ")") host)))
+
 (defn fetch-title
-  "Page title for url, or nil if it can't be fetched or isn't HTML."
+  "Page title for url, or url-title if the site refuses the fetch. Throws, saying why (HTTP status,
+  error, not HTML, no title), if there isn't one."
   [url]
   (let [{:keys [status headers body error]}
         @(http/get url {:timeout 15000 :as :text :max-redirects 5
-                        :user-agent "Mozilla/5.0 (compatible; ThirdMind/0.1)"
-                        :headers {"Accept" "text/html,application/xhtml+xml"}})]
-    (when (and (not error) (<= 200 (or status 0) 299)
-               (str/includes? (str (:content-type headers)) "html")
-               (string? body))
-      (html-title body))))
+                        :headers {"User-Agent" "Mozilla/5.0 (compatible; ThirdMind/0.1)"
+                                  "Accept"     "text/html,application/xhtml+xml"}})
+        fail #(throw (ex-info (str "no title for " url ": " %) {:url url :status status}))]
+    (cond error                                         (fail (str (or (ex-message error) error)))
+          (#{401 403 429} status)                       (url-title url)
+          (not (<= 200 (or status 0) 299))              (fail (str "HTTP " status))
+          (not (str/includes? (str (:content-type headers)) "html")) (fail (str "not HTML (" (:content-type headers) ")"))
+          :else (or (and (string? body) (html-title body)) (fail "no usable <title> or og:title")))))
 
 ;;; Rewrite
 
@@ -108,9 +128,12 @@
           line (reverse (bare-url-spans line))))
 
 (defn link!
-  "Replace bare url in the block whose content is content, in file rel. Returns true if written."
+  "Replace bare url in the block whose content is content, in file rel; failing that (it was edited
+  since), in the one block that still has url bare. Returns true if written."
   [cfg rel content url title]
   (gw/rewrite! cfg rel
                (fn [{:keys [lines blocks]}]
-                 (when-let [b (gw/find-block blocks content)]
+                 (when-let [b (or (gw/find-block blocks content)
+                                  (let [hits (filter #(and (eligible? (:content %)) (some #{url} (bare-urls (:content %)))) blocks)]
+                                    (when (= 1 (count hits)) (first hits))))]
                    (reduce (fn [ls n] (update ls n link-line url title)) lines (:line-nos b))))))
