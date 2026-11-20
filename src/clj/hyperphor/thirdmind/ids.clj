@@ -1,7 +1,9 @@
 (ns hyperphor.thirdmind.ids
   "ThirdMind's own block ids (:tmid), kept in a store of their own that rebuilds don't touch.
   One record per graph file: {:file rel :seen ms :gone ms? :blocks [[tmid content path] ...]}."
-  (:require [clojure.string :as str]
+  (:require [clojure.edn]
+            [clojure.java.io]
+            [clojure.string :as str]
             [hyperphor.thirdmind.identity :as ident]
             [hyperphor.tunamelt.sqlite :as sqlite]
             [hyperphor.tunamelt.store :as store])
@@ -106,3 +108,23 @@
   [realm rel]
   (when-let [r (record realm rel)]
     (when-not (:gone r) (put-all! realm [(assoc r :gone (now))]))))
+
+;;; Backup as text: one EDN record per line, sorted by file, so a git-tracked copy diffs small.
+
+(defn export!
+  "Write every record of realm to file, one per line. Returns the count."
+  [realm file]
+  (let [rs  (sort-by :file (records realm))
+        tmp (java.io.File. (str file ".tmp"))]
+    (with-open [w (clojure.java.io/writer tmp)]
+      (doseq [r rs] (.write w (pr-str r)) (.write w "\n")))
+    (.renameTo tmp (java.io.File. (str file)))
+    (count rs)))
+
+(defn import!
+  "Restore records from an export! file into realm (overwriting same-file records). Returns the count."
+  [realm file]
+  (let [rs (with-open [r (clojure.java.io/reader file)]
+             (doall (map clojure.edn/read-string (remove str/blank? (line-seq r)))))]
+    (put-all! realm rs)
+    (count rs)))

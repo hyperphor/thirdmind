@@ -87,6 +87,19 @@
       (is (= (id s1) (id s2)))
       (is (= {:new 0 :bumped 1} (select-keys (counts (p/changes s1 s2)) [:new :bumped]))))))
 
+(deftest titles-and-edits-since-goddinpotty
+  (ingest!)
+  (let [old (update (legacy) :items
+                    #(into {} (for [[k e] %] [k (cond-> e (str/includes? (:content-md e) "solo") (assoc :content-md "From [B](https://s.example/B)\n\nA solo fragment"))])))
+        {:keys [state]} (m/import-state (ctx) old)
+        s2  (:state (p/plan (ctx) state "later"))
+        by  (fn [s txt] (some #(when (str/includes? (str (:content-md %)) txt) %) (vals (:items s))))]
+    (is (= 2 (:version (by s2 "A solo fragment post"))) "edited since goddinpotty's run: a new version")
+    (is (:tm-frozen (by s2 "A thread post")) "unchanged but for rendering: frozen")
+    (is (= "A solo fragment post" (:title (by s2 "A solo fragment post"))))
+    (is (str/includes? (:content-html (by s2 "A solo fragment post")) "<div class=\"blyg-title\">A solo fragment post</div>"))
+    (is (nil? (:title (by s2 "the first child point"))) "thread children get no title")))
+
 (deftest duplicate-guard
   (ingest!)
   (let [old (update (legacy) :items #(into {} (map (fn [[k e]] [k (assoc e :content-md (str "Totally different " k))])) %))

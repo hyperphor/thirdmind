@@ -23,7 +23,9 @@
                           "- other\n")
    "pages/Target.md" "alias:: T2\n\n- t\n"
    "pages/topic.md"  "- unpublished page\n"
-   "journals/2026_01_02.md" "- a journal post #[[blyg]]\n"})
+   "journals/2026_01_02.md" "- a journal post #[[blyg]]\n"
+   "pages/Nest.md" "- [Title]([Title](https://x.example/a)) via #blyg\n"
+   "pages/Re.md" "- My answer, briefly [Their post — Other Blyg](https://other.example/f/x/) #blyg-reply\n"})
 
 (use-fixtures :once
   (fn [f]
@@ -61,6 +63,20 @@
     (is (= "a journal post" (c/fragment-md *ctx* (uri "Jan 2nd, 2026" "0")))))
   (is (= "From [Pub](https://site.example/Pub)\n\nIntro\n\n![[aaa]]\n\n![[bbb]]"
          (c/thread-md *ctx* (uri "Pub" "0") ["aaa" "bbb"]))))
+
+(deftest titles
+  (is (= "Intro" (c/title *ctx* (uri "Pub" "0"))) "tag stripped")
+  (is (= "see Target, T2 and #topic, label" (c/title *ctx* (uri "Pub" "0.0"))) "links to their text")
+  (is (nil? (c/title *ctx* (uri "Pub" "0.4"))) "an image first: no title"))
+
+(deftest nested-links
+  (is (= "[Title](https://x.example/a) via" (c/own-md *ctx* (uri "Nest" "0")))))
+
+(deftest replies
+  (is (= "My answer, briefly" (c/own-md *ctx* (uri "Re" "0"))) "the target is cited, not quoted")
+  (is (= "My answer, briefly" (c/title *ctx* (uri "Re" "0"))))
+  (is (= "https://other.example/f/x/" (c/reply-target "a [b](https://other.example/f/x/)")))
+  (is (= :ambiguous (c/reply-target "https://a.example/1 and https://b.example/2"))))
 
 (deftest html
   (let [h (c/fragment-html *ctx* (uri "Pub" "0"))]

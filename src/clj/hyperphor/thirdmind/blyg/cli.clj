@@ -17,6 +17,7 @@
             [hyperphor.thirdmind.blyg.publish :as publish]
             [hyperphor.thirdmind.blyg.wire :as w]
             [hyperphor.thirdmind.core :as core]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.tunamelt.core :as t]))
 
@@ -189,7 +190,7 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
   ["Usage: lein blyg preview <graph-dir> --goddinpotty <config.edn> [--db path] [--out file]"
    "       lein blyg import  <graph-dir> --goddinpotty <config.edn> --from <goddinpotty-state.edn> --out <state.edn> [--db path]"
    "       lein blyg publish <graph-dir> --goddinpotty <config.edn> --state <state.edn> --live <live-blyg-dir> --out <dir>"
-   "                         [--db path] [--dry-run] [--allow-new] [--withdraw]"
+   "                         [--db path] [--ids-backup file] [--dry-run] [--allow-new] [--withdraw]"
    "       lein blyg diff    <staging-dir> <live-blyg-dir>"
    "       lein blyg push    <site-repo> --path ammdi/blyg --remote <remote>"
    "       lein blyg parity  <state.edn> <live-blyg-dir>"])
@@ -252,7 +253,10 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
               :else
               (do (write-files! (opts "--out") (site-files state (opts "--live")))
                   (write-state! (opts "--state") state)
-                  (println "Wrote site files to" (opts "--out") "and state to" (opts "--state"))))))
+                  (println "Wrote site files to" (opts "--out") "and state to" (opts "--state"))
+                  (when-let [b (opts "--ids-backup")]
+                    (ids/open! (ids/path-for (or (opts "--db") (str realm ".db"))))
+                    (println "Backed up" (ids/export! realm b) "id records to" b))))))
 
       (do (run! println usage) (System/exit 1)))
     (shutdown-agents)))

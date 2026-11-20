@@ -47,4 +47,5 @@ test/resources/graph — fixture graph covering parser edge cases
 ## Rules
 
 - Every page URI goes through `ingest/page-key`; never build one by hand.
-- Never write to the source graph. Watcher tests copy the fixture graph to a temp dir.
+- Watcher tests copy the fixture graph to a temp dir.
+   lein watch --write` actions (through graph_write.clj), and `lein blyg publish`'s  state files in the ammdi repo (`.thirdmind-blyg-state.edn`, `.thirdmind-ids.edn`), as  goddinpotty keeps `.blyg-state.edn` there.

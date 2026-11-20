@@ -7,6 +7,7 @@
             [hiccup2.core :as h]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.parse :as parse]
+            [hyperphor.thirdmind.smart-url :as smart-url]
             [hyperphor.thirdmind.ui.render :as r]
             [hyperphor.tunamelt.core :as t]))
 
@@ -40,7 +41,8 @@
      :page-of   (fn [name] (fetch (canon name)))
      :control   (set (map str/lower-case tags))
      :exit      (set (map canon exit-tags))
-     :askclaude (canon "AskClaude")}))
+     :askclaude (canon "AskClaude")
+     :reply     (canon (or (some #(when (str/ends-with? % "-reply") %) tags) "blyg-reply"))}))
 
 (defn page-url
   "Site URL for page name as written, else its canonical page (via aliases); nil if unpublished."
@@ -68,6 +70,35 @@
                                          (fn [[m a b]] (if (control (str/lower-case (or a b))) "" m)))))
       (str/replace #"(?m)[ \t]+$" "")
       str/trim))
+
+(defn reply-target
+  "A reply's target: the one http(s) URL in content, bare or as a [text](url) link; :ambiguous if
+  several, nil if none."
+  [content]
+  (let [md   (map second (re-seq #"(?<!!)\[[^\]\n]*\]\((https?://[^)\s]+)\)" content))
+        urls (distinct (concat md (smart-url/bare-urls content)))]
+    (cond (= 1 (count urls)) (first urls) (seq urls) :ambiguous :else nil)))
+
+(defn- drop-url
+  "content without url, as a [text](url) link or bare: a reply's target is cited, not quoted."
+  [content url]
+  (let [q (java.util.regex.Pattern/quote url)]
+    (-> content
+        (str/replace (re-pattern (str "(?<!!)\\[[^\\]\\n]*\\]\\(" q "\\)")) "")
+        (str/replace (re-pattern (str "(?<![\\w/=])" q)) ""))))
+
+(declare obj)
+
+(defn own-text
+  "The block's own text as published: control tags and a reply's target URL stripped, nested links undone."
+  [ctx uri]
+  (let [o (obj ctx uri)
+        s (str (:content o))
+        u (when (some #{(:reply ctx)} (:tags o)) (reply-target s))]
+    (-> (if (string? u) (drop-url s u) s)
+        ;; [text]([text](url)), as a link pasted over a link makes: one link, as Logseq shows it
+        (str/replace #"(?<!!)\[([^\]\n]*)\]\(\[[^\]\n]*\]\((https?://[^)\s]+)\)\)" "[$1]($2)")
+        (->> (strip-tags ctx)))))
 
 (def ^:private markers {"TODO" "◘" "DONE" "⌧"})
 
@@ -130,7 +161,7 @@
 (defn own-md
   "Markdown of the block's own text."
   [ctx uri]
-  (->> (strip-tags ctx (str (:content (obj ctx uri)))) (#(outside-code % (partial md-refs ctx))) marker str/trim))
+  (->> (own-text ctx uri) (#(outside-code % (partial md-refs ctx))) marker str/trim))
 
 (defn item-md
   "Own text, then each body child's (recursively), as paragraphs."
@@ -182,8 +213,44 @@
    :block      (fn [id] (:content (fetch (ingest/block-uri realm id))))
    :block-href (constantly nil)})
 
-(defn own-hiccup [ctx uri]
-  (raw-string (r/block-html (render-ctx ctx) (marker (strip-tags ctx (str (:content (obj ctx uri))))))))
+;;; Titles (goddinpotty's first-line-split): a short first line, up to the first bare URL, image,
+;;; macro or block ref, is the item's title. Presentation only: never part of content_md.
+
+(def max-title-length 140)
+
+(defn- md->plain [md]
+  (-> (str md) (str/replace #"\[([^\]]*)\]\([^\)]*\)" "$1") (str/replace #"\s+" " ") str/trim))
+
+(defn title-split
+  "[title-line rest] of the block's (tag-stripped) text when its first line can be a title, else nil."
+  [ctx uri]
+  (let [s           (own-text ctx uri)
+        [line more] (str/split s #"\n" 2)
+        stop        (->> [(some-> (first (smart-url/bare-url-spans line)) first)
+                          (str/index-of line "![") (str/index-of line "{{") (str/index-of line "((")]
+                         (remove nil?) (reduce min (count line)))
+        head        (str/trim (subs line 0 stop))
+        tail        (str/trim (str (subs line stop) (when more (str "\n" more))))
+        plain       (md->plain (outside-code head (partial md-refs ctx)))]
+    (when (and (not (re-find #"^#{1,6}\s" line)) (not (str/blank? plain)) (<= (count plain) max-title-length))
+      [head tail])))
+
+(defn title
+  "The block's title text (links reduced to their text), or nil."
+  [ctx uri]
+  (when-let [[head] (title-split ctx uri)] (md->plain (outside-code (marker head) (partial md-refs ctx)))))
+
+(defn- inline-html [ctx s]
+  (let [h (str/trim (r/block-html (render-ctx ctx) s))]
+    (if-let [[_ inner] (re-matches #"(?s)<p>(.*)</p>" h)] inner h)))
+
+(defn own-hiccup
+  "The block's own text as HTML; with title?, a title-worthy first line as a div.blyg-title."
+  [ctx uri & {:keys [title?]}]
+  (if-let [[head tail] (and title? (title-split ctx uri))]
+    [:div [:div.blyg-title (raw-string (inline-html ctx (marker head)))]
+     (when-not (str/blank? tail) (raw-string (r/block-html (render-ctx ctx) tail)))]
+    (raw-string (r/block-html (render-ctx ctx) (marker (own-text ctx uri))))))
 
 (defn- answer-hiccup [ctx uri]
   (for [{u :uri o :obj} (kids uri) :when (not (private? ctx u))]
@@ -191,8 +258,8 @@
 
 (defn item-hiccup
   "Own text, with body children as a nested list; an #AskClaude block's answer in a closed <details>."
-  [ctx uri]
-  (let [own (own-hiccup ctx uri)]
+  [ctx uri & {:keys [title?]}]
+  (let [own (own-hiccup ctx uri :title? title?)]
     (if (ask-claude? ctx (obj ctx uri))
       (if-let [ans (seq (answer-hiccup ctx uri))]
         [:details.ask-claude [:summary own] [:ul.claude ans]]
@@ -204,7 +271,7 @@
 (defn fragment-html
   "content_html of a fragment: attribution (unless :attribution? false), then item-hiccup."
   [{:keys [base-url] :as ctx} uri & {:keys [attribution?] :or {attribution? true}}]
-  (let [body (item-hiccup ctx uri)
+  (let [body (item-hiccup ctx uri :title? attribution?)   ; top-level items get a title
         src  (when attribution? (source-url ctx uri))]
     (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
         (absolutize-html base-url))))
@@ -220,7 +287,7 @@
                    (raw-string (:content-html e))]
                   [:blockquote.blyg-transclusion {:data-blyg-id (:blyg-id e) :data-blyg-version (:version e)}
                    (raw-string (:content-html e))]))
-        body  (into [:div [:div (own-hiccup ctx uri)]] (map quote segments))
+        body  (into [:div [:div (own-hiccup ctx uri :title? true)]] (map quote segments))
         src   (source-url ctx uri)]
     (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
         (absolutize-html base-url))))

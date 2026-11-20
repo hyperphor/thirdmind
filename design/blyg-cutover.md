@@ -7,12 +7,15 @@ Commands below use these names:
 ```bash
 TM=/opt/mt/repos/hyperphor/thirdmind; GP=/opt/mt/repos/goddinpotty
 CFG=$GP/resources/ammdi-config.edn; LIVE=/opt/mt/repos/hyperphor-git/ammdi/blyg
-STATE=<decided below>; STAGE=/tmp/blyg-stage
+STATE=/opt/mt/repos/ammdi/.thirdmind-blyg-state.edn; IDS=/opt/mt/repos/ammdi/.thirdmind-ids.edn
+STAGE=/tmp/blyg-stage
 ```
 
 ## Decide first
 
-- **Where ThirdMind's blyg state lives.** It is irreplaceable, like `.blyg-state.edn`, and needs
+- **Where ThirdMind's blyg state lives.** Decided: in ammdi, next to `.blyg-state.edn`, along
+  with a text export of the ids (`--ids-backup`, one line per graph file, so it diffs small).
+  Previously: It is irreplaceable, like `.blyg-state.edn`, and needs
   to be git-tracked and backed up. The same goes for `ammdi.ids.db`, the block ids it is keyed by.
   Options: a small private repo, or next to `.blyg-state.edn` in ammdi. ThirdMind's own rule is
   not to write into the graph repo, so that would be an exception.
@@ -96,7 +99,7 @@ lein blyg diff $STAGE $LIVE      # expect 0 missing; the new and bumped items ar
 When that looks right, publish into the live dir and push:
 
 ```bash
-lein blyg publish /opt/mt/repos/ammdi --goddinpotty $CFG --state $STATE --live $LIVE --out $LIVE
+lein blyg publish /opt/mt/repos/ammdi --goddinpotty $CFG --state $STATE --live $LIVE --out $LIVE --ids-backup $IDS
 lein blyg push /opt/mt/repos/hyperphor-git --path ammdi/blyg --remote website
 ```
 
@@ -126,3 +129,18 @@ It refuses to run if a new item looks like an unmatched old one (`--allow-new` o
 - Second and third publishes: 0 changes.
 - Staging vs live: 0 missing, 10 new files (5 items × json + page), 6 json/xml differing (the
   3 bumped items, blyg.json, items/index.json, feed.xml).
+
+## Cut-over, 2026-11-19 (done, not pushed)
+
+- Real ids minted: `ammdi.db` was rebuilt with `ammdi.ids.db` (123,411 blocks) and its times
+  backfilled. The old db is kept as `ammdi-old.db`. The watcher, :2284 and :2285 were restarted
+  on the new db, with logs in `target/*.log` (thirdmind and thirdmind-edit).
+- goddinpotty: patch and config applied in its working tree, uncommitted. A local build with its
+  blygger off left `/blyg/` byte-identical (848 files).
+- Import: 331 of 416 matched, 85 carried frozen. State is in
+  `ammdi/.thirdmind-blyg-state.edn`, ids are exported to `ammdi/.thirdmind-ids.edn`, and Logseq
+  auto-committed both.
+- Publish into the local `hyperphor-git/ammdi/blyg`: 7 new items (none on the live site
+  before), 3 bumps (real edits), nothing else. Parity of state against the dir: 438/438 files.
+- Not done: the push (`lein blyg push /opt/mt/repos/hyperphor-git --path ammdi/blyg --remote
+  website`), which waits on sorting out the other unpushed site changes.

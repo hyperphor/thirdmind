@@ -90,3 +90,16 @@
       (write! "pages/Third.md" "- a block worth keeping\n")
       (rebuild!)
       (is (= id ((tmids "pages/Third.md") "a block worth keeping"))))))
+
+(deftest export-import
+  (rebuild!)
+  (let [f      (java.io.File/createTempFile "ids-export" ".edn")
+        before (all-tmids)]
+    (try
+      (is (pos? (ids/export! realm f)))
+      (doseq [x [*db* (ids/path-for *db*)], sfx ["" "-wal" "-shm"]] (io/delete-file (str x sfx) true))
+      (core/fresh-store! *db* realm)
+      (is (pos? (ids/import! realm f)))
+      (ingest/ingest! *dir* realm)
+      (is (= before (all-tmids)) "ids restored from the export alone")
+      (finally (.delete f)))))

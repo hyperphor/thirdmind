@@ -12,7 +12,6 @@
             [hyperphor.thirdmind.blyg.wire :as w]
             [hyperphor.thirdmind.identity :as ident]
             [hyperphor.thirdmind.ingest :as ingest]
-            [hyperphor.thirdmind.smart-url :as smart-url]
             [hyperphor.tunamelt.core :as t]))
 
 (def control-tags {:blyg "blyg" :pin "blyg-pin" :reply "blyg-reply"})
@@ -25,15 +24,6 @@
   (or (:tmid ((:fetch ctx) uri))
       (throw (ex-info (str "block has no :tmid (rebuild the db with an ids store): " uri) {:uri uri}))))
 
-;;; The reply target: the one http(s) URL in the block's own text, bare or as a [text](url) link.
-
-(defn reply-target
-  "The block's one URL, :ambiguous if several, nil if none."
-  [content]
-  (let [md   (map second (re-seq #"(?<!!)\[[^\]\n]*\]\((https?://[^)\s]+)\)" content))
-        urls (distinct (concat md (smart-url/bare-urls content)))]
-    (cond (= 1 (count urls)) (first urls) (seq urls) :ambiguous :else nil)))
-
 (defn candidates
   "What the db says to publish. {:tagged [uri] :threads [uri] :leaves [uri] :children [uri]
   :kids {uri [child-uri]} :remote {uri snapshot} :skipped [[uri why]]}"
@@ -42,7 +32,7 @@
                                 {:keys [uri]} (t/referrers (tag-uri realm k) {:attr :tags :type "block"})]
                             uri))
         target  (into {} (for [u tagged :let [o ((:fetch ctx) u)] :when (has-tag? realm o :reply)]
-                           [u (reply-target (str (:content o)))]))
+                           [u (c/reply-target (str (:content o)))]))
         skipped (for [[u tg] target :when (or (= tg :ambiguous) (and (string? tg) (not (remotes tg))))]
                   [u (if (= tg :ambiguous) "reply with more than one URL" (str "reply target not resolved (new replies need a fetch, not yet supported): " tg))])
         tagged  (remove (set (map first skipped)) tagged)
@@ -59,40 +49,37 @@
 
 (declare norm-text)
 
-(defn- appended?
-  "Does new-md extend old-md's text (an edit since goddinpotty's last publish), beyond rendering differences?"
-  [old-md new-md]
-  (let [a (norm-text old-md) b (norm-text new-md)]
-    (and (not (ident/trivial? a)) (> (count b) (count a)) (str/starts-with? b a))))
-
 (defn- advance
   "existing (or nil) moved to this rendering, bumping only when ThirdMind's rendering changed.
-  blank-id? says which blyg ids are unmatched empty legacy items, which a first-sight comparison ignores."
+  blank-id? says which blyg ids are unmatched empty legacy items, which a first-sight comparison
+  ignores. A frozen entry (:tm-frozen) still holds goddinpotty's content."
   [blank-id? existing kind md html trans stub-of now]
   (let [base [(name kind) (w/content-hash md) (w/html-signature html) trans]
-        seen #(assoc % :tm-base base)]
+        seen #(-> % (assoc :tm-base base) (dissoc :tm-frozen))
+        bump #(seen (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now))]
     (cond
       (nil? existing)
       (seen (w/next-entry nil kind md html trans stub-of now))
 
-      ;; first sight of an imported entry: freeze unless what it is or transcludes changed (not
-      ;; counting empty items goddinpotty published: a thread of only those is a fragment here),
-      ;; or its text was appended to since
+      ;; first sight of an imported entry: freeze if it is the same thing goddinpotty published,
+      ;; text compared after normalizing rendering differences (and not counting empty items
+      ;; goddinpotty published: a thread of only those is a fragment here); else a new version
       (nil? (:tm-base existing))
       (if (let [tr (some->> (:transclusions existing) (remove (comp blank-id? :id)) vec)
                 k  (if (and (= :thread (keyword (:kind existing))) (empty? tr) (not (:stub-of existing)))
                      :fragment
                      (keyword (:kind existing)))]
             (and (= kind k) (= trans (when (= k :thread) tr))
-                 (not (appended? (:content-md existing) md))))
-        (seen existing)
-        (seen (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now)))
+                 (= (norm-text (:content-md existing)) (norm-text md))))
+        (assoc (seen existing) :tm-frozen true)
+        (bump))
 
+      ;; unchanged for readers; refresh presentation-only html (eg a title) unless frozen
       (= base (:tm-base existing))
-      existing
+      (if (or (:tm-frozen existing) (= html (:content-html existing))) existing (assoc existing :content-html html))
 
       :else
-      (seen (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now)))))
+      (bump))))
 
 (defn- stub-of-ref [remote]
   {:origin (:origin remote) :id (:id remote) :version (:version remote)
@@ -184,6 +171,15 @@
                         items1 threads)
         items3  (reduce (fn [items u] (if (has-tag? realm ((:fetch ctx) u) :pin) (update items (id u) w/pin-entry) items))
                         items2 (distinct (concat tagged children)))
+        ;; titles (presentation only): top-level items' first lines; frozen ones keep goddinpotty's
+        items3  (reduce (fn [items u]
+                          (let [e (items (id u))]
+                            (cond (:tm-frozen e) items
+                                  (child? u) (update items (id u) dissoc :title :title-source)
+                                  :else (if-let [t (c/title ctx u)]
+                                          (update items (id u) assoc :title t :title-source "first-line")
+                                          (update items (id u) dissoc :title :title-source)))))
+                        items3 (distinct (concat tagged children)))
         gone    (set/difference (set (keys items0)) current)
         live    (remove #(= "withdrawn" (name (:kind (items0 %)))) gone)
         items4  (if withdraw? (reduce #(update %1 %2 w/withdraw-entry now) items3 live) items3)
