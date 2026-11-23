@@ -15,6 +15,7 @@
             [hyperphor.thirdmind.blyg.migrate :as migrate]
             [hyperphor.thirdmind.blyg.pages :as pages]
             [hyperphor.thirdmind.blyg.publish :as publish]
+            [hyperphor.thirdmind.blyg.remote :as remote]
             [hyperphor.thirdmind.blyg.wire :as w]
             [hyperphor.thirdmind.config :as config]
             [hyperphor.thirdmind.core :as core]
@@ -33,7 +34,7 @@
      :exit-tags (some->> (re-find #"(?s):exit-tags\s*\[(.*?)\]" s) second
                          (re-seq #"\"([^\"]+)\"") (map second))}))
 
-(def control-tags ["blyg" "blyg-pin" "blyg-reply"])
+(def control-tags ["blyg" "blyg-pin" "blyg-reply" "blyg-response"])
 
 (defn candidates
   "Block entries carrying a control tag, newest first when block times are known."
@@ -175,20 +176,44 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
         (git repo "push" "-q" remote)
         :pushed)))
 
-(defn- content-ctx [realm gp]
+(defn- content-ctx
+  "Content ctx from goddinpotty settings; with :graph-dir and :origin, images become blyg media."
+  [realm gp & [media-opts]]
   (let [s (goddinpotty-settings gp)]
-    (c/ctx realm {:base-url (:base-url s) :exit-tags (:exit-tags s) :published (c/published-pages (:site-dir s))})))
+    (c/ctx realm (merge {:base-url (:base-url s) :exit-tags (:exit-tags s) :published (c/published-pages (:site-dir s))}
+                        media-opts))))
+
+(defn referenced-media
+  "Names under origin's media/ that state's items (current content and pins) point at."
+  [origin state]
+  (let [re (re-pattern (str (java.util.regex.Pattern/quote (str origin "media/")) "([^\"'\\s)]+)"))]
+    (set (for [e (vals (:items state))
+               html (cons (:content-html e) (map :content-html (vals (:pins e))))
+               [_ n] (re-seq re (str html))]
+           n))))
+
+(defn copy-media!
+  "Copy {name source-file} into dir/media/ where missing (media are immutable: never overwritten).
+  Returns the names copied."
+  [dir media]
+  (vec (for [[n ^java.io.File f] (sort-by key media)
+             :let [dest (io/file dir "media" n)]
+             :when (not (.exists dest))]
+         (do (io/make-parents dest) (io/copy f dest) n))))
 
 (defn change-counts [ch] (into (sorted-map) (for [[k v] ch] [k (count v)])))
 
 (defn publish!
-  "Plan a publish of realm's #blyg items against the :state file, and write site files to :out and
-  the new state (and :ids-backup, ids store already open), unless refused (possible duplicates,
-  without :allow-new?), :dry-run?, or (:skip-unchanged?) nothing changed.
+  "Plan a publish of realm's #blyg items (from :graph, whose assets become media/) against the
+  :state file, and write site files and media to :out and the new state (and :ids-backup, ids store already open), unless refused (possible duplicates,
+  without :allow-new?), :dry-run?, or (:skip-unchanged?) nothing changed. Reply targets not yet in
+  the state's :remotes are fetched first (:resolve, default remote/resolve-target), even on a dry run.
   Returns {:report :changes :status}, status :refused, :dry-run, :unchanged or :written."
-  [{:keys [realm goddinpotty state live out ids-backup withdraw? allow-new? dry-run? skip-unchanged?]}]
+  [{:keys [realm graph goddinpotty state live out ids-backup withdraw? allow-new? dry-run? skip-unchanged? resolve]
+    :or {resolve remote/resolve-target}}]
   (let [old (read-state state)
-        {new :state report :report} (publish/plan (content-ctx realm goddinpotty) old (w/now-iso) :withdraw? withdraw?)
+        ctx (content-ctx realm goddinpotty (when graph {:graph-dir graph :origin (:site (live-manifest live))}))
+        {new :state report :report} (publish/plan ctx (publish/fetch-remotes ctx old resolve) (w/now-iso) :withdraw? withdraw?)
         ch  (publish/changes old new)
         res {:report report :changes ch}]
     (assoc res :status
@@ -196,10 +221,20 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
              (and (seq (:possible-duplicates report)) (not allow-new?)) :refused
              dry-run? :dry-run
              (and skip-unchanged? (not-any? seq (vals ch))) :unchanged
-             :else (do (write-files! out (site-files new live))
+             :else (do (copy-media! out (select-keys @(:media ctx) (referenced-media (:origin ctx) new)))
+                       (write-files! out (site-files new live))
                        (write-state! state new)
                        (when ids-backup (ids/export! realm ids-backup))
                        :written)))))
+
+(defn mention!
+  "Send the webmentions state's stubs still need, from the blyg live at live-dir, and record them
+  in state. Returns {:log [line] :pending n}, pending being stubs still waiting to go live."
+  [{:keys [state live http] :or {http remote/http}}]
+  (let [old (read-state state)
+        {:keys [items log]} (remote/send-mentions http (:site (live-manifest live)) (:items old))]
+    (when (not= items (:items old)) (write-state! state (assoc old :items items)))
+    {:log log :pending (count (filter #(str/includes? % "deferred") log))}))
 
 (defn- open-db! [dir opts]
   (let [realm (core/realm-for dir)
@@ -217,6 +252,7 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
    ""
    "  publish [--dry-run] [--allow-new] [--withdraw]   publish #blyg items into the site repo"
    "  push                                             commit and push the blyg dir of the site repo"
+   "  mention                                          send webmentions for stubs once they are live"
    "  preview [--out file]                             every #blyg item on one local page"
    "  import                                           goddinpotty's state → ThirdMind's (once, at cut-over)"
    "  diff <staging-dir> <live-blyg-dir>              compare two blyg dirs"
@@ -240,6 +276,7 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
                        "import"  {"--goddinpotty" gp "--out" (:state b) "--db" (:db cfg)
                                   "--from" (some-> gp goddinpotty-settings :state-file)}
                        "push"    {"--path" (:mount b) "--remote" (:remote b)}
+                       "mention" {"--state" (:state b) "--live" site}
                        {})))))
 
 (defn -main [& args]
@@ -274,6 +311,13 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
       (do (need "--path" "--remote")
           (println (name (push! (first pos) (opts "--path") (opts "--remote"))) (opts "--path")))
 
+      "mention"
+      (if-not (and (opts "--state") (opts "--live"))
+        (do (run! println usage) (System/exit 1))
+        (let [{:keys [log pending]} (mention! {:state (opts "--state") :live (opts "--live")})]
+          (run! println log)
+          (println (if (seq log) (str (count log) " stub(s) handled, " pending " not live yet") "No webmentions to send."))))
+
       "preview"
       (do (need "--goddinpotty")
           (let [realm (open-db! (first pos) opts)
@@ -293,7 +337,7 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
           (let [realm (open-db! (first pos) opts)
                 _     (when (opts "--ids-backup") (ids/open! (ids/path-for (or (opts "--db") (str realm ".db")))))
                 {:keys [report changes status]}
-                (publish! {:realm realm :goddinpotty (opts "--goddinpotty") :state (opts "--state")
+                (publish! {:realm realm :graph (first pos) :goddinpotty (opts "--goddinpotty") :state (opts "--state")
                            :live (opts "--live") :out (opts "--out") :ids-backup (opts "--ids-backup")
                            :withdraw? (opts "--withdraw") :allow-new? (opts "--allow-new")
                            :dry-run? (opts "--dry-run")})]

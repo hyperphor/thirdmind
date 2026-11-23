@@ -121,9 +121,12 @@
 
 (deftest auto-publish-test
   (let [runs (atom 0)
+        mentions (atom 0)
         stop (watch/start! (assoc *cfg* :interval-ms 50 :settle-ms 0
-                                  :blygger {:auto-publish? true :quiet-ms 300} :blyg-dirty (atom nil)
-                                  :blyg-run (fn [_ _] (swap! runs inc))))]
+                                  :blygger {:auto-publish? true :quiet-ms 300 :mention-ms 100} :blyg-dirty (atom nil)
+                                  :blyg-run (fn [_] (swap! runs inc))
+                                  ;; one stub waits for the site twice, then goes out
+                                  :blyg-mention (fn [_] (if (< (swap! mentions inc) 3) 1 0))))]
     (try
       (write! "pages/Untagged.md" "- nothing to publish")
       (Thread/sleep 600)
@@ -135,4 +138,5 @@
       (is (= 1 @runs))
       (Thread/sleep 500)
       (is (= 1 @runs) "once per burst")
+      (is (= 3 @mentions) "mentions retried after the publish until none wait")
       (finally (stop)))))

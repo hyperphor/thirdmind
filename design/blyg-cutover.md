@@ -25,9 +25,9 @@ STAGE=/tmp/blyg-stage
 - **Syndication.** Posting to Mastodon/Bluesky isn't ported yet (phase 4). goddinpotty's
   `-main-blyg-syndicate` reads its own `.blyg-state.edn`, so after cut-over it finds nothing new
   and posts nothing: harmless, but new items aren't posted until syndication is ported.
-- **Replies.** A new `#blyg-reply` needs the remote item fetched, which isn't ported yet. One is
-  pending: Nov 12th, 2026, replying to `blyg.pioneeringspirit.xyz`. Existing replies are carried
-  over with their stored snapshots.
+- **Replies.** New `#blyg-reply` targets are fetched at publish (ported 2026-11-21; see
+  `blyg-replies.md`). Existing replies are carried over with their stored snapshots. Webmentions are
+  sent once a stub is live (`lein blyg mention`, or the watcher).
 
 - **Unpushed local build.** `hyperphor-git/ammdi/blyg` has 26 uncommitted changes from a
   goddinpotty build around Nov 16; the last push was Nov 15. Push or discard them before step 4,

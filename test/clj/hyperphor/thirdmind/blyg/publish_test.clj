@@ -1,5 +1,6 @@
 (ns hyperphor.thirdmind.blyg.publish-test
-  (:require [clojure.java.io :as io]
+  (:require [clojure.data.json :as json]
+            [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [hyperphor.thirdmind.blyg.cli :as cli]
@@ -7,6 +8,8 @@
             [hyperphor.thirdmind.blyg.migrate :as m]
             [hyperphor.thirdmind.blyg.pages :as pages]
             [hyperphor.thirdmind.blyg.publish :as p]
+            [hyperphor.thirdmind.blyg.remote :as r]
+            [hyperphor.thirdmind.blyg.wire :as w]
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]))
 
@@ -129,3 +132,125 @@
     (try
       (is (= {:missing ["items/gone.json"] :extra ["items/n.json"] :differ []} (cli/diff-dirs a b)))
       (finally (doseq [d [a b], x (reverse (file-seq d))] (.delete ^java.io.File x))))))
+
+(deftest images-and-update-notes
+  (ingest!)
+  (let [origin "https://s.example/blyg/"
+        mctx   #(c/ctx realm {:base-url "https://s.example" :published #{"B"} :exit-tags []
+                              :graph-dir *dir* :origin origin})
+        s1     (:state (p/plan (mctx) {:items {}} "2026-01-01T00:00:00Z"))
+        thread #(some (fn [e] (when (= :thread (:kind e)) e)) (vals (:items %)))]
+    (io/make-parents (io/file *dir* "assets/pic one.png"))
+    (spit (io/file *dir* "assets/pic one.png") "PNGBYTES")
+    (spit (io/file *dir* "pages/B.md") (str/replace page "\t- \n" "\t- ![a pic](../assets/pic one.png)\n"))
+    (ingest!)
+    (let [ctx (mctx)
+          s2  (:state (p/plan ctx s1 "2026-01-02T00:00:00Z"))
+          img (some #(when (str/includes? (str (:content-html %)) "<img") %) (vals (:items s2)))
+          n   (c/media-name (io/file *dir* "assets/pic one.png"))]
+      (is (re-matches #"[0-9a-f]{12}-pic-one\.png" n))
+      (is (= {n (io/file *dir* "assets/pic one.png")} @(:media ctx)) "the publisher learns what to copy")
+      (is (str/includes? (:content-html img) (str "src=\"" origin "media/" n "\"")) "absolute media URL")
+      (is (= [{:url (str "media/" n) :mime "image/png" :alt "a pic"}] (:media (w/item-json origin img))))
+      (testing "the thread's new version says what changed, as a generated note"
+        (is (= 2 (:version (thread s2))))
+        (is (= {:version 2 :at "2026-01-02T00:00:00Z" :note "Added a part." :generated true} (last (:changelog (thread s2)))))
+        (is (str/includes? (w/feed-xml origin {:title "T"} (:items s2)) "<title>Added a part. — A thread post</title>")))
+      (is (= #{n} (cli/referenced-media origin s2)))
+      (testing "media are copied once, never overwritten"
+        (let [d (.toFile (java.nio.file.Files/createTempDirectory "blyg-m" (make-array java.nio.file.attribute.FileAttribute 0)))]
+          (try
+            (is (= [n] (cli/copy-media! d @(:media ctx))))
+            (is (= [] (cli/copy-media! d @(:media ctx))))
+            (is (= "PNGBYTES" (slurp (io/file d "media" n))))
+            (finally (doseq [x (reverse (file-seq d))] (.delete ^java.io.File x)))))))))
+
+(deftest frozen-items-keep-site-images
+  (io/make-parents (io/file *dir* "assets/p.png"))
+  (spit (io/file *dir* "assets/p.png") "PNG")
+  (spit (io/file *dir* "pages/B.md") (str page "- An old picture post ![](../assets/p.png) #blyg\n"))
+  (ingest!)
+  (let [{:keys [state]} (m/import-state (ctx) (legacy))
+        s2   (:state (p/plan (ctx) state "2026-01-01T00:00:00Z"))
+        mctx (c/ctx realm {:base-url "https://s.example" :published #{"B"} :exit-tags []
+                           :graph-dir *dir* :origin "https://s.example/blyg/"})
+        s3   (:state (p/plan mctx s2 "2026-01-02T00:00:00Z"))]
+    (is (= zero (counts (p/changes s2 s3))) "moving images to media alone doesn't bump frozen items")
+    (is (every? :tm-frozen (vals (:items s3))))))
+
+(deftest change-notes
+  (let [ex {:kind :thread :content-html "<p>x</p>" :transclusions [{:id "a" :version 1} {:id "b" :version 1}]}]
+    (is (= "Added 2 parts." (p/change-note ex :thread "" [{:id "a" :version 1} {:id "b" :version 1} {:id "c" :version 1} {:id "d" :version 1}])))
+    (is (= "Removed a part." (p/change-note ex :thread "" [{:id "a" :version 1}])))
+    (is (= "Revised a part." (p/change-note ex :thread "<p>x</p>" [{:id "a" :version 2} {:id "b" :version 1}])))
+    (is (= "Added an image." (p/change-note (assoc ex :kind :fragment :transclusions nil) :fragment "<p>x</p><img src=\"u\">" nil)))
+    (is (= "Updated an image." (p/change-note (assoc ex :kind :fragment :transclusions nil :content-html "<img src=\"a\">") :fragment "<img src=\"b\">" nil)))
+    (is (= "Edited." (p/change-note (assoc ex :kind :fragment :transclusions nil) :fragment "<p>y</p>" nil)))
+    (is (= "Now a fragment." (p/change-note ex :fragment "" nil)))))
+
+(deftest replying
+  (spit (io/file *dir* "pages/B.md")
+        (str "- My answer [Their post](https://other.example/f/x/) #blyg-response\n"
+             "- Another answer https://other.example/f/new/ #blyg-reply\n"))
+  (ingest!)
+  (let [remote {:origin "https://other.example/" :id "x" :version 3 :retrieved "2026-01-01T00:00:00Z"
+                :source-title "Their post" :content-md "their text" :content-html "<p>their text</p>"
+                :page-url "https://other.example/f/x/" :webmention "https://other.example/wm"}
+        {:keys [state report]} (p/plan (ctx) {:items {} :remotes {"https://other.example/f/x/" remote}} "2026-01-01T00:00:00Z")
+        [e & more] (vals (:items state))]
+    (is (nil? more) "the reply to an unfetched target is skipped")
+    (is (str/includes? (second (first (:skipped report))) "couldn't be fetched"))
+    (is (= :thread (keyword (:kind e))) "#blyg-response makes a stub, like #blyg-reply")
+    (is (= {:origin "https://other.example/" :id "x" :version 3} (select-keys (:stub-of e) [:origin :id :version])))
+    (is (= [{:id "x" :version 3 :origin "https://other.example/"}] (:transclusions e)))
+    (is (= "https://other.example/wm" (:mention-endpoint e)))
+    (is (not (str/includes? (:content-md e) "other.example/f/x")) "the target URL is cited, not quoted")
+    (is (not (str/includes? (:content-md e) "blyg-response")) "the tag is stripped")))
+
+(deftest fetching-reply-targets
+  (let [item  {:blyg "0.3" :id "y" :version 2 :kind "fragment" :content_md "theirs" :content_html "<p>theirs</p>"}
+        pages {"https://o.example/f/y/"         {:status 200 :final-url "https://o.example/f/y/"
+                                                  :body "<html><link rel=\"alternate\" type=\"application/json\" href=\"/items/y.json\"></html>"}
+               "https://o.example/items/y.json" {:status 200 :final-url "https://o.example/items/y.json" :body (json/write-str item)}
+               "https://o.example/blyg.json"    {:status 200 :final-url "https://o.example/blyg.json"
+                                                  :body (json/write-str {:title "O's Blyg" :webmention "/wm"})}}
+        get   (fn [url _] (pages url))
+        snap  (r/resolve-target get "https://o.example/f/y/")]
+    (is (= {:origin "https://o.example/" :id "y" :version 2 :source-title "O's Blyg"
+            :webmention "https://o.example/wm" :page-url "https://o.example/f/y/"}
+           (select-keys snap [:origin :id :version :source-title :webmention :page-url]))
+        "a permalink page leads to its item document; the origin is where that was fetched from")
+    (is (nil? (r/resolve-target get "https://elsewhere.example/post")) "not a blyg item")
+    (spit (io/file *dir* "pages/B.md") "- Reply https://o.example/f/y/ #blyg-reply\n- Other https://nope.example/ #blyg-reply\n")
+    (ingest!)
+    (let [st (p/fetch-remotes (ctx) {:items {}} #(r/resolve-target get %))
+          {:keys [state report]} (p/plan (ctx) st "2026-01-01T00:00:00Z")]
+      (is (= ["https://o.example/f/y/"] (keys (:remotes st))))
+      (is (= 1 (count (:skipped report))))
+      (is (= "y" (:id (:stub-of (first (vals (:items state))))))))))
+
+(deftest sending-mentions
+  (let [origin "https://me.example/"
+        stub   {:blyg-id "s" :version 1 :kind "thread" :stub-of {:id "y" :version 2}
+                :mention-target "https://o.example/f/y/"}
+        items  {"a" stub
+                "b" (assoc stub :blyg-id "done" :mention-sent {:target-version 2 :ok? true})
+                "c" (dissoc stub :stub-of)}
+        posts  (atom [])
+        http   (fn [url & {:keys [method body]}]
+                 (case [method url]
+                   [nil "https://me.example/items/s.json"] {:status 200 :body (json/write-str {:version 1 :stub_of {:id "y"}})}
+                   [:head "https://o.example/f/y/"] {:status 200 :headers {"link" ["</wm>; rel=\"webmention\""]}}
+                   [:post "https://o.example/wm"] (do (swap! posts conj body) {:status 202})
+                   nil))
+        {out :items lines :log} (r/send-mentions http origin items)]
+    (is (= [(str "source=" (java.net.URLEncoder/encode "https://me.example/f/s/" "UTF-8")
+                 "&target=" (java.net.URLEncoder/encode "https://o.example/f/y/" "UTF-8"))] @posts)
+        "one mention: already-sent and non-stub items are left alone; endpoint found by the Link header")
+    (is (= {:endpoint "https://o.example/wm" :target-version 2 :ok? true :status 202}
+           (select-keys (get-in out ["a" :mention-sent]) [:endpoint :target-version :ok? :status])))
+    (is (= 1 (count lines)))
+    (testing "a stub not live yet waits, and records nothing"
+      (let [{o :items l :log} (r/send-mentions (constantly nil) origin {"a" stub})]
+        (is (nil? (get-in o ["a" :mention-sent])))
+        (is (str/includes? (first l) "deferred"))))))

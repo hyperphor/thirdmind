@@ -76,7 +76,8 @@
   (is (= "My answer, briefly" (c/own-md *ctx* (uri "Re" "0"))) "the target is cited, not quoted")
   (is (= "My answer, briefly" (c/title *ctx* (uri "Re" "0"))))
   (is (= "https://other.example/f/x/" (c/reply-target "a [b](https://other.example/f/x/)")))
-  (is (= :ambiguous (c/reply-target "https://a.example/1 and https://b.example/2"))))
+  (is (= :ambiguous (c/reply-target "https://a.example/1 and https://b.example/2")))
+  (is (= "" (str/trim (#'c/drop-url "(https://o.example/f/x/)" "https://o.example/f/x/"))) "no empty parens left"))
 
 (deftest html
   (let [h (c/fragment-html *ctx* (uri "Pub" "0"))]

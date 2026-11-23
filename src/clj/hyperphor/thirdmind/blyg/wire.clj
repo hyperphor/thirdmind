@@ -123,6 +123,27 @@
   [items]
   (if (some (fn [e] (or (:stub-of e) (some :origin (:transclusions e)))) (vals items)) 2 1))
 
+(defn- unescape-attr [s]
+  (-> s (str/replace "&quot;" "\"") (str/replace "&lt;" "<") (str/replace "&gt;" ">") (str/replace "&amp;" "&")))
+
+(def ^:private mime-types
+  {"png" "image/png" "jpg" "image/jpeg" "jpeg" "image/jpeg" "gif" "image/gif" "webp" "image/webp"
+   "svg" "image/svg+xml" "pdf" "application/pdf" "mp4" "video/mp4" "mp3" "audio/mpeg"})
+
+(defn media-refs
+  "media[] for html (§5.4): each distinct img of this origin's media/, {:url :mime :alt}."
+  [origin html]
+  (let [pre (str origin "media/")]
+    (->> (re-seq #"<img\b[^>]*>" (str html))
+         (keep (fn [tag]
+                 (let [src (second (re-find #"src=\"([^\"]*)\"" tag))]
+                   (when (and src (str/starts-with? src pre))
+                     (let [n (subs src (count origin))]
+                       {:url n
+                        :mime (get mime-types (str/lower-case (or (second (re-find #"\.(\w+)$" n)) "")) "application/octet-stream")
+                        :alt (unescape-attr (or (second (re-find #"alt=\"([^\"]*)\"" tag)) ""))})))))
+         (reduce (fn [acc m] (if (some #(= (:url %) (:url m)) acc) acc (conj acc m))) []))))
+
 (defn item-json [origin entry]
   (let [withdrawn? (= :withdrawn (keyword (:kind entry)))]
     (cond-> {:blyg protocol
@@ -136,8 +157,9 @@
              :content_md (if withdrawn? "" (:content-md entry))
              :content_html (if withdrawn? "" (:content-html entry))
              :content_hash (:content-hash entry)
-             :media []
+             :media (if withdrawn? [] (media-refs origin (:content-html entry)))
              :changelog (mapv (fn [c] (cond-> {:version (:version c) :at (:at c) :note (:note c)}
+                                        (:generated c) (assoc :generated true)
                                         (:pinned c) (assoc :pinned true)))
                               (:changelog entry))}
       (:transclusions entry)                  (assoc :transclusions (:transclusions entry))
@@ -242,7 +264,9 @@
     (str "    <item>\n"
          "      <guid isPermaLink=\"false\">blyg:" id ":v" (:version event) "</guid>\n"
          "      <link>" origin "f/" id "/</link>\n"
-         "      <title>" (escape-xml (if withdrawn? "withdrawn" (entry-title items entry))) "</title>\n"
+         "      <title>" (escape-xml (cond withdrawn? "withdrawn"
+                                        (:note event) (str (:note event) " — " (entry-title items entry))
+                                        :else (entry-title items entry))) "</title>\n"
          "      <description>" (if withdrawn? "" (cdata (str (stub-citation-html entry) (:content-html entry)))) "</description>\n"
          "      <pubDate>" (rfc822 (:at event)) "</pubDate>\n"
          "      <blyg:id>" id "</blyg:id>\n"

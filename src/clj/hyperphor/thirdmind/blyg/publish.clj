@@ -1,7 +1,7 @@
 (ns hyperphor.thirdmind.blyg.publish
   "The blyg publisher, after goddinpotty.export.blygger/publish!, over ThirdMind's db: #blyg blocks
   → state entries (keyed by block :tmid) → site files. A tagged block with children is a thread
-  whose children are promoted to fragments; #blyg-pin pins; #blyg-reply + one URL is a stub.
+  whose children are promoted to fragments; #blyg-pin pins; #blyg-reply (or #blyg-response) + one URL is a stub.
 
   Imported entries keep goddinpotty's content frozen: ThirdMind records its own rendering
   (:tm-base, [kind hash html-signature transclusions]) the first time it sees an entry and bumps
@@ -14,11 +14,11 @@
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.tunamelt.core :as t]))
 
-(def control-tags {:blyg "blyg" :pin "blyg-pin" :reply "blyg-reply"})
+(def control-tags {:blyg ["blyg"] :pin ["blyg-pin"] :reply ["blyg-reply" "blyg-response"]})
 
-(defn- tag-uri [realm k] (ingest/page-uri realm (ingest/page-key (control-tags k))))
+(defn- tag-uris [realm k] (set (for [tg (control-tags k)] (ingest/page-uri realm (ingest/page-key tg)))))
 
-(defn- has-tag? [realm o k] (boolean (some #{(tag-uri realm k)} (:tags o))))
+(defn- has-tag? [realm o k] (boolean (some (tag-uris realm k) (:tags o))))
 
 (defn- tmid [ctx uri]
   (or (:tmid ((:fetch ctx) uri))
@@ -26,15 +26,15 @@
 
 (defn candidates
   "What the db says to publish. {:tagged [uri] :threads [uri] :leaves [uri] :children [uri]
-  :kids {uri [child-uri]} :remote {uri snapshot} :skipped [[uri why]]}"
+  :kids {uri [child-uri]} :remote {uri snapshot} :unresolved [target-url] :skipped [[uri why]]}"
   [{:keys [realm] :as ctx} remotes]
-  (let [tagged  (distinct (for [k (keys control-tags)
-                                {:keys [uri]} (t/referrers (tag-uri realm k) {:attr :tags :type "block"})]
+  (let [tagged  (distinct (for [k (keys control-tags), tu (tag-uris realm k)
+                                {:keys [uri]} (t/referrers tu {:attr :tags :type "block"})]
                             uri))
         target  (into {} (for [u tagged :let [o ((:fetch ctx) u)] :when (has-tag? realm o :reply)]
                            [u (c/reply-target (str (:content o)))]))
         skipped (for [[u tg] target :when (or (= tg :ambiguous) (and (string? tg) (not (remotes tg))))]
-                  [u (if (= tg :ambiguous) "reply with more than one URL" (str "reply target not resolved (new replies need a fetch, not yet supported): " tg))])
+                  [u (if (= tg :ambiguous) "reply with more than one URL" (str "reply target couldn't be fetched as a blyg item: " tg))])
         tagged  (remove (set (map first skipped)) tagged)
         remote  (into {} (for [[u tg] target :when (and (string? tg) (remotes tg))] [u (remotes tg)]))
         kids    (into {} (for [u tagged] [u (vec (c/body-children ctx u))]))
@@ -43,20 +43,62 @@
     {:tagged tagged :threads threads :leaves (remove thread? tagged)
      :children (distinct (mapcat kids threads)) :kids kids :remote remote
      :reply-url (into {} (for [[u tg] target :when (string? tg)] [u tg]))
+     :unresolved (vec (distinct (for [[_ tg] target :when (and (string? tg) (not (remotes tg)))] tg)))
      :skipped (vec skipped)}))
+
+(defn fetch-remotes
+  "state with a snapshot in :remotes for each reply target that lacks one, via (resolve url) → snapshot
+  or nil. Targets that don't resolve stay out (plan skips their replies)."
+  [ctx state resolve]
+  (let [urls (:unresolved (candidates ctx (or (:remotes state) {})))
+        got  (into {} (for [u urls :let [s (resolve u)] :when s] [u s]))]
+    (cond-> state (seq got) (update :remotes merge got))))
 
 ;;; Versions against ThirdMind's own baseline
 
 (declare norm-text)
 
+(defn change-note
+  "Generated changelog note (§5.2) for existing → this rendering. Says what changed, never quotes
+  the prior text."
+  [existing kind html trans]
+  (let [ids     #(set (map :id %))
+        old     (:transclusions existing)
+        added   (count (remove (ids old) (map :id trans)))
+        removed (count (remove (ids trans) (map :id old)))
+        revised (count (filter (fn [{:keys [id version]}] (some #(and (= id (:id %)) (not= version (:version %))) old)) trans))
+        imgs    #(count (re-seq #"<img\b" (str %)))
+        n       (fn [k what] (if (= 1 k) (str "a " what) (str k " " what "s")))]
+    (cond
+      (not= (name kind) (name (:kind existing))) (str "Now a " (name kind) ".")
+      (or (pos? added) (pos? removed))
+      (str/join " " (remove nil? [(when (pos? added) (str "Added " (n added "part") "."))
+                                  (when (pos? removed) (str "Removed " (n removed "part") "."))]))
+      (> (imgs html) (imgs (:content-html existing))) "Added an image."
+      (let [no-src #(w/html-signature (str/replace (str %) #"src=\"[^\"]*\"" ""))]
+        (and (pos? (imgs html)) (= (no-src html) (no-src (:content-html existing)))))
+      "Updated an image."
+      (and (pos? revised) (= (map :id trans) (map :id old))) (str "Revised " (n revised "part") ".")
+      :else "Edited.")))
+
+(defn- with-note
+  "entry with note on its latest changelog event, marked generated."
+  [entry note]
+  (update entry :changelog #(conj (pop %) (assoc (peek %) :note note :generated true))))
+
 (defn- advance
   "existing (or nil) moved to this rendering, bumping only when ThirdMind's rendering changed.
   blank-id? says which blyg ids are unmatched empty legacy items, which a first-sight comparison
-  ignores. A frozen entry (:tm-frozen) still holds goddinpotty's content."
-  [blank-id? existing kind md html trans stub-of now]
-  (let [base [(name kind) (w/content-hash md) (w/html-signature html) trans]
+  ignores. A frozen entry (:tm-frozen) still holds goddinpotty's content, and is judged by plain,
+  a delay of [md html] rendered without media (images at the site's /assets/), so that moving
+  images to blyg media alone doesn't bump it."
+  [blank-id? existing kind md html trans stub-of now plain]
+  (let [base   [(name kind) (w/content-hash md) (w/html-signature html) trans]
+        [pm ph] (if plain @plain [md html])
+        pbase  [(name kind) (w/content-hash pm) (w/html-signature ph) trans]
         seen #(-> % (assoc :tm-base base) (dissoc :tm-frozen))
-        bump #(seen (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now))]
+        bump #(-> (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now)
+                  seen (with-note (change-note existing kind html trans)))]
     (cond
       (nil? existing)
       (seen (w/next-entry nil kind md html trans stub-of now))
@@ -70,13 +112,16 @@
                      :fragment
                      (keyword (:kind existing)))]
             (and (= kind k) (= trans (when (= k :thread) tr))
-                 (= (norm-text (:content-md existing)) (norm-text md))))
-        (assoc (seen existing) :tm-frozen true)
+                 (= (norm-text (:content-md existing)) (norm-text pm))))
+        (assoc existing :tm-base pbase :tm-frozen true)
         (bump))
 
-      ;; unchanged for readers; refresh presentation-only html (eg a title) unless frozen
+      (:tm-frozen existing)
+      (if (= pbase (:tm-base existing)) existing (bump))
+
+      ;; unchanged for readers; refresh presentation-only html (eg a title)
       (= base (:tm-base existing))
-      (if (or (:tm-frozen existing) (= html (:content-html existing))) existing (assoc existing :content-html html))
+      (if (= html (:content-html existing)) existing (assoc existing :content-html html))
 
       :else
       (bump))))
@@ -142,12 +187,16 @@
         ;; empty legacy items still unmatched (keyed by their uuid): ThirdMind doesn't publish those
         blank?  (set (for [[k e] items0 :when (and (= k (:legacy-uuid e)) (str/blank? (:content-md e)))] (:blyg-id e)))
         advance (partial advance blank?)
+        ;; the same rendering without media, for judging frozen entries
+        pctx    (when (:graph-dir ctx) (assoc ctx :graph-dir nil :media (atom {})))
         ;; fragments: leaves and promoted children (no attribution of their own)
         items1  (reduce (fn [items u]
                           (let [attr? (not (child? u))]
                             (update items (id u) advance :fragment
                                     (c/fragment-md ctx u :attribution? attr?)
-                                    (c/fragment-html ctx u :attribution? attr?) nil nil now)))
+                                    (c/fragment-html ctx u :attribution? attr?) nil nil now
+                                    (when pctx (delay [(c/fragment-md pctx u :attribution? attr?)
+                                                       (c/fragment-html pctx u :attribution? attr?)])))))
                         items0 (distinct (concat leaves children)))
         items1  (reduce (fn [items u] (assoc-in items [(id u) :thread-child?] (boolean (child? u))))
                         items1 (distinct (concat leaves children)))
@@ -163,7 +212,9 @@
                             (-> items
                                 (update (id u) advance :thread
                                         (c/thread-md ctx u (for [[kind e] segs] (if (= kind :remote) (:id e) (:blyg-id e))))
-                                        (c/thread-html ctx u segs) tr (when rem (stub-of-ref rem)) now)
+                                        (c/thread-html ctx u segs) tr (when rem (stub-of-ref rem)) now
+                                        (when pctx (delay [(c/thread-md pctx u (for [[kind e] segs] (if (= kind :remote) (:id e) (:blyg-id e))))
+                                                           (c/thread-html pctx u segs)])))
                                 (assoc-in [(id u) :thread-child?] false)
                                 (cond-> rem (update (id u) assoc :mention-target (:page-url rem)
                                                     :mention-endpoint (:webmention rem)

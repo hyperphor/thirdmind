@@ -84,24 +84,44 @@
 
 (defn blyg-publish!
   "Publish the blyg per config :blygger settings, and push it if anything changed; logs the outcome."
-  [realm {:keys [goddinpotty state ids-backup site-repo mount remote]}]
+  [{:keys [realm dir] {:keys [goddinpotty state ids-backup site-repo mount remote]} :blygger}]
   (let [site (str site-repo "/" mount)
         {:keys [status changes report]}
-        (blyg/publish! {:realm realm :goddinpotty goddinpotty :state state :live site :out site
+        (blyg/publish! {:realm realm :graph dir :goddinpotty goddinpotty :state state :live site :out site
                         :ids-backup ids-backup :skip-unchanged? true})]
     (log "blyg publish:" (name status) (if (= status :unchanged) "" (blyg/change-counts changes)))
+    (doseq [[uri why] (:skipped report)] (log "blyg: skipped" uri "-" why))
     (case status
       :refused (log "blyg: not publishing, new items look like old ones:" (:possible-duplicates report)
                     "- check, then `lein blyg publish --allow-new`")
       :written (log "blyg push:" (name (blyg/push! site-repo mount remote)))
       nil)))
 
-(defn- auto-publish! [{:keys [realm blygger blyg-dirty blyg-run] :or {blyg-run blyg-publish!}}]
-  (when-let [t0 (some-> blyg-dirty deref)]
-    (when (>= (- (System/currentTimeMillis) t0) (:quiet-ms blygger 120000))
-      (reset! blyg-dirty nil)
-      (try (blyg-run realm blygger)
-           (catch Exception e (log "blyg publish error:" (ex-message e)))))))
+(defn blyg-mention!
+  "Send pending webmentions (they wait until the pushed site is live); logs each. Returns how many wait."
+  [{{:keys [state site-repo mount]} :blygger}]
+  (let [{lines :log pending :pending} (blyg/mention! {:state state :live (str site-repo "/" mount)})]
+    (doseq [l lines] (log "blyg mention:" l))
+    pending))
+
+(defn- auto-publish!
+  "Publish once #blyg edits go quiet; then try webmentions every :mention-ms (default 2 min) while any
+  stub waits for the site to go live, up to 10 tries."
+  [{:keys [blygger blyg-dirty blyg-run blyg-mention blyg-mentions]
+    :or {blyg-run blyg-publish! blyg-mention blyg-mention!} :as cfg}]
+  (let [now (System/currentTimeMillis)
+        gap (:mention-ms blygger 120000)]
+    (when-let [t0 (some-> blyg-dirty deref)]
+      (when (>= (- now t0) (:quiet-ms blygger 120000))
+        (reset! blyg-dirty nil)
+        (try (blyg-run cfg)
+             (catch Exception e (log "blyg publish error:" (ex-message e))))
+        (some-> blyg-mentions (reset! {:at now :tries 0}))))
+    (when-let [{:keys [at tries]} (some-> blyg-mentions deref)]
+      (when (>= now at)
+        (let [pending (try (blyg-mention cfg)
+                           (catch Exception e (log "blyg mention error:" (ex-message e)) 1))]
+          (reset! blyg-mentions (when (and (pos? pending) (< (inc tries) 10)) {:at (+ now gap) :tries (inc tries)})))))))
 
 (defn scan
   "{rel-path [mtime size]} for the graph's page and journal files."
@@ -177,7 +197,8 @@
                                 :times? (times/git-repo? (:dir cfg))}
                                cfg)
                   (:write? cfg) action-defaults
-                  (get-in cfg [:blygger :auto-publish?]) (update :blyg-dirty #(or % (atom (System/currentTimeMillis)))))  ; publish once at start
+                  (get-in cfg [:blygger :auto-publish?]) (-> (update :blyg-dirty #(or % (atom (System/currentTimeMillis))))
+                                                              (update :blyg-mentions #(or % (atom nil)))))  ; publish once at start
         known   (init! cfg)
         running (atom true)
         worker  (future

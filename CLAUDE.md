@@ -13,6 +13,7 @@ lein watch /opt/mt/repos/ammdi   # side process; Ctrl-C to stop
 lein watch | lein serve | lein times   # with no args: graph, db, port etc. from config/ammdi.edn
 lein blyg publish [--dry-run]    # #blyg items → the site repo's blyg dir (settings: config :blygger)
 lein blyg push                   # commit + push only that dir
+lein blyg mention                # webmentions for stubs now live
 lein blyg preview                # #blyg items → target/blyg-preview.html (reads the db only)
 ```
 
@@ -41,7 +42,8 @@ src/clj/hyperphor/thirdmind/
   blyg/publish.clj — the publisher: #blyg blocks → state entries (by :tmid) → versions
   blyg/migrate.clj — import goddinpotty's .blyg-state.edn (by Logseq uuid) into ThirdMind's
   blyg/pages.clj   — archive and permalink HTML, filled into the live pages as templates
-  blyg/cli.clj     — `lein blyg preview | import | publish | diff | push | parity`
+  blyg/remote.clj  — reply targets fetched (snapshots); webmentions sent
+  blyg/cli.clj     — `lein blyg preview | import | publish | diff | push | mention | parity`
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```

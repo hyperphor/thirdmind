@@ -202,7 +202,7 @@ through, tombstones.
 
 **4. The rest, roughly in order.** Syndication (port `syndicate`, secrets stay out of the repo;
 it has to be here before goddinpotty's is retired for good, or new items stop being posted);
-`#blyg-reply` stubs and webmentions (port `blyg_remote`);
+`#blyg-reply` stubs and webmentions (port `blyg_remote`; status in `blyg-replies.md`);
 `<link rel="blyg">` on published pages; protocol 0.4 (manifest-located surface, `[[id | text]]`
 labels, `links[]`).
 

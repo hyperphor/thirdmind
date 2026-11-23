@@ -29,8 +29,9 @@
 
 (defn ctx
   "Context for realm. opts :base-url, :published (set of slugs), :exit-tags (tag names marking a
-  block private), :tags (control tags to strip, default blyg, blyg-pin, blyg-reply)."
-  [realm {:keys [base-url published exit-tags tags] :or {tags ["blyg" "blyg-pin" "blyg-reply"]}}]
+  block private), :tags (control tags to strip, default blyg, blyg-pin, blyg-reply, blyg-response); with
+  :graph-dir and :origin (the blyg's), graph assets become blyg media (see media-url)."
+  [realm {:keys [base-url published exit-tags tags graph-dir origin] :or {tags ["blyg" "blyg-pin" "blyg-reply" "blyg-response"]}}]
   (let [aliases (ingest/db-aliases realm)
         fetch   (memoize t/get)
         canon   (fn [name] (ingest/page-uri realm (let [k (ingest/page-key name)] (get aliases k k))))]
@@ -42,7 +43,10 @@
      :control   (set (map str/lower-case tags))
      :exit      (set (map canon exit-tags))
      :askclaude (canon "AskClaude")
-     :reply     (canon (or (some #(when (str/ends-with? % "-reply") %) tags) "blyg-reply"))}))
+     :reply     (set (map canon (filter #(re-find #"-(?:reply|response)$" %) tags)))
+     :graph-dir graph-dir
+     :origin    origin
+     :media     (atom {})}))
 
 (defn page-url
   "Site URL for page name as written, else its canonical page (via aliases); nil if unpublished."
@@ -50,8 +54,30 @@
   (when-let [title (some #(when (and % (published (slug %))) %) [name (:name (page-of name))])]
     (str base-url (slug title) (when anchor (str "#" anchor)))))
 
-(defn- asset-url [{:keys [base-url]} dest]
-  (let [h (r/asset-href dest)] (if (str/starts-with? h "/") (str base-url (subs h 1)) h)))
+;;; Media (§5.4): a graph asset is published under the blyg as media/<hash>-<name>, named by its
+;;; bytes so a media URL always serves the same bytes. The ctx's :media atom collects
+;;; {name source-file} for the publisher to copy.
+
+(defn media-name
+  "media/ file name for asset file f: 12 hex chars of its sha256, then its name made URL-safe."
+  [^java.io.File f]
+  (let [d (.digest (java.security.MessageDigest/getInstance "SHA-256") (java.nio.file.Files/readAllBytes (.toPath f)))]
+    (str (subs (apply str (map #(format "%02x" (bit-and % 0xff)) d)) 0 12) "-"
+         (str/replace (.getName f) #"[^A-Za-z0-9._-]+" "-"))))
+
+(defn- media-url
+  "Absolute blyg media URL for a ../assets/ destination whose file exists, else nil."
+  [{:keys [graph-dir origin media]} dest]
+  (when-let [[_ path] (and graph-dir origin (re-matches #"\.\./assets/(.*)" (str/trim dest)))]
+    (let [f (io/file graph-dir "assets" path)]
+      (when (.isFile f)
+        (let [n (media-name f)]
+          (swap! media assoc n f)
+          (str origin "media/" n))))))
+
+(defn- asset-url [{:keys [base-url] :as ctx} dest]
+  (or (media-url ctx dest)
+      (let [h (r/asset-href dest)] (if (str/starts-with? h "/") (str base-url (subs h 1)) h))))
 
 ;;; Text, outside code
 
@@ -80,12 +106,14 @@
     (cond (= 1 (count urls)) (first urls) (seq urls) :ambiguous :else nil)))
 
 (defn- drop-url
-  "content without url, as a [text](url) link or bare: a reply's target is cited, not quoted."
+  "content without url, as a [text](url) link or bare (and any parens left empty): a reply's target
+  is cited, not quoted."
   [content url]
   (let [q (java.util.regex.Pattern/quote url)]
     (-> content
         (str/replace (re-pattern (str "(?<!!)\\[[^\\]\\n]*\\]\\(" q "\\)")) "")
-        (str/replace (re-pattern (str "(?<![\\w/=])" q)) ""))))
+        (str/replace (re-pattern (str "(?<![\\w/=])" q)) "")
+        (str/replace #"\(\s*\)" ""))))
 
 (declare obj)
 
@@ -94,7 +122,7 @@
   [ctx uri]
   (let [o (obj ctx uri)
         s (str (:content o))
-        u (when (some #{(:reply ctx)} (:tags o)) (reply-target s))]
+        u (when (some (:reply ctx) (:tags o)) (reply-target s))]
     (-> (if (string? u) (drop-url s u) s)
         ;; [text]([text](url)), as a link pasted over a link makes: one link, as Logseq shows it
         (str/replace #"(?<!!)\[([^\]\n]*)\]\(\[[^\]\n]*\]\((https?://[^)\s]+)\)\)" "[$1]($2)")
@@ -197,6 +225,15 @@
 
 ;;; HTML: ThirdMind's renderer, with links to the site and URLs made absolute.
 
+(defn- media-html
+  "html with /assets/ src and href targets (as the renderer writes them) pointed at blyg media."
+  [ctx html]
+  (str/replace html #"(src|href)=\"/assets/([^\"]*)\""
+               (fn [[whole attr path]]
+                 (if-let [u (media-url ctx (str "../assets/" (java.net.URLDecoder/decode ^String path "UTF-8")))]
+                   (str attr "=\"" u "\"")
+                   whole))))
+
 (defn absolutize-html
   "Relative src/href attributes in html made absolute against base."
   [html base]
@@ -274,7 +311,7 @@
   (let [body (item-hiccup ctx uri :title? attribution?)   ; top-level items get a title
         src  (when attribution? (source-url ctx uri))]
     (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
-        (absolutize-html base-url))))
+        (->> (media-html ctx)) (absolutize-html base-url))))
 
 (defn thread-html
   "content_html of a thread: attribution, own text, then one blockquote per segment, in order:
@@ -290,4 +327,4 @@
         body  (into [:div [:div (own-hiccup ctx uri :title? true)]] (map quote segments))
         src   (source-url ctx uri)]
     (-> (str (h/html (if-let [[name u] src] [:div [:p.source-page "From " [:a {:href u} name]] body] body)))
-        (absolutize-html base-url))))
+        (->> (media-html ctx)) (absolutize-html base-url))))
