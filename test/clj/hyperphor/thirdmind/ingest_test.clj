@@ -35,6 +35,9 @@
   (is (= "Jun 11th, 2020" (:name (parse/journal-info "2020_06_11.md"))))
   (is (= "a/b: c" (parse/file-page-name "a%2Fb%3A c.md" false)))
   (is (= "__Erlebnis__" (parse/file-page-name "__Erlebnis__.md" false)))
+  (is (= "goddinpotty/TODOs" (parse/file-page-name "goddinpotty.TODOs.md" false)))
+  (is (= "R/ Crumb" (parse/file-page-name "R. Crumb.md" false)))
+  (is (= "v1.0" (parse/file-page-name "v1%2E0.md" false)))
   (is (= {:pages ["x y" "tag" "t2"] :tags ["x y" "tag" "t2"] :block-refs []}
          (parse/extract-refs "#[[x y]] #tag, and #t2. not#this http://a.b/#frag #+BEGIN_QUOTE"))))
 
@@ -93,3 +96,11 @@
   (is (= ["- journal entry about [[Computer Power and Human Reason]]"
           "  - nested with two spaces"]
          (core/outline (page "Jul 5th, 2013")))))
+
+(deftest preamble-nesting
+  (is (= [[-1] [-1 0] [0]] (map :path (:blocks (parse/parse-lines ["# Heading" "\t- under it" "- sibling"])))))
+  (is (= [[0] [1]] (map :path (:blocks (parse/parse-lines ["title:: x" "" "- a" "- b"]))))))
+
+(deftest loose-tags
+  (is (= ["Private"] (parse/loose-tags "This page (#Private) `#code`")))
+  (is (= [] (:tags (parse/extract-refs "This page (#Private)")))))

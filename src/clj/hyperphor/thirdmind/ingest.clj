@@ -54,13 +54,17 @@
 
 (defn graph->objects
   "Resolve refs across parsed pages; returns {:objects [[uri obj] ...] :report {...}}.
-  ctx supplies what lies outside pages: :aliases {alias-key page-key}, :known-id? (block ids)."
+  ctx supplies what lies outside pages: :aliases {alias-key page-key}, :known-id? (block ids),
+  :file-page? (page keys with a file)."
   ([realm pages] (graph->objects realm pages {}))
   ([realm pages ctx]
   (let [by-key     (group-by (comp page-key :name) pages)
         collisions (into {} (filter #(> (count (val %)) 1)) by-key)
+        ;; an alias never shadows a page with its own file (Logseq links [[name]] to that page)
+        file-page? (fn [k] (or (contains? by-key k) (when-let [f (:file-page? ctx)] (f k))))
         aliases    (into (or (:aliases ctx) {})
-                         (for [p pages, a (split-list (get-in p [:props "alias"]))]
+                         (for [p pages, a (split-list (get-in p [:props "alias"]))
+                               :when (not (file-page? (page-key a)))]
                            [(page-key a) (page-key (:name p))]))
         resolve-pg (fn [name] (let [k (page-key name)] (get aliases k k)))
         blocks     (for [p pages, b (:blocks p)]
@@ -133,11 +137,14 @@
 ;;; Incremental: one file at a time, with aliases and block ids resolved against the db.
 
 (defn db-aliases
-  "{alias-key page-key} for every alias:: recorded in the db."
+  "{alias-key page-key} for every alias:: recorded in the db, except aliases naming a page with a file."
   [realm]
-  (into {} (for [{:keys [uri obj]} (t/find "page" {:realm realm})
-                 a (:alias obj)]
-             [(page-key a) (uri-key uri)])))
+  (let [pages (t/find "page" {:realm realm})
+        files (set (for [{:keys [uri obj]} pages :when (not (:stub obj))] (uri-key uri)))]
+    (into {} (for [{:keys [uri obj]} pages
+                   a (:alias obj)
+                   :let [k (page-key a)] :when (not (files k))]
+               [k (uri-key uri)]))))
 
 (defn- page-blocks [page-uri]
   (mapv #(select-keys % [:uri :obj]) (t/find "block" {:attrs {:page page-uri}})))
@@ -156,8 +163,9 @@
         new-puri (some->> parsed :name page-key (page-uri realm))
         objects  (when parsed
                    (->> (:objects (graph->objects realm [parsed]
-                                                  {:aliases   (db-aliases realm)
-                                                   :known-id? #(some? (t/get (block-uri realm %)))}))
+                                                  {:aliases    (db-aliases realm)
+                                                   :known-id?  #(some? (t/get (block-uri realm %)))
+                                                   :file-page? #(some-> (t/get (page-uri realm %)) :stub not)}))
                         ;; stubs only for pages not already in the db
                         (remove (fn [[u o]] (and (:stub o) (t/get u))))
                         vec))]
