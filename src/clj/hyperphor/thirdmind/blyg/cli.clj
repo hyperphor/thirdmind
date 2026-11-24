@@ -24,13 +24,14 @@
             [hyperphor.tunamelt.core :as t]))
 
 (defn goddinpotty-settings
-  "{:base-url :site-dir :state-file :exit-tags} read from a goddinpotty config (by regex: it uses #include)."
+  "{:base-url :site-dir :state-file :main-page :exit-tags} read from a goddinpotty config (by regex: it uses #include)."
   [file]
   (let [s (-> (slurp file) (str/replace #";[^\n]*" "") (str/replace #"#_\s*\"[^\"]*\"" ""))
         v (fn [k] (second (re-find (re-pattern (str ":" k "\\s+\"([^\"]+)\"")) s)))]
     {:base-url  (v "real-base-url")
      :site-dir  (v "output-dir")
      :state-file (v "state-file")
+     :main-page (v "main-page")
      :exit-tags (some->> (re-find #"(?s):exit-tags\s*\[(.*?)\]" s) second
                          (re-seq #"\"([^\"]+)\"") (map second))}))
 

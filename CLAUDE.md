@@ -15,6 +15,7 @@ lein blyg publish [--dry-run]    # #blyg items → the site repo's blyg dir (set
 lein blyg push                   # commit + push only that dir
 lein blyg mention                # webmentions for stubs now live
 lein blyg preview                # #blyg items → target/blyg-preview.html (reads the db only)
+lein site parity [--db x --rebuild]  # published pages vs goddinpotty's output; `lein site why <page>`
 ```
 
 ## Layout
@@ -44,6 +45,8 @@ src/clj/hyperphor/thirdmind/
   blyg/pages.clj   — archive and permalink HTML, filled into the live pages as templates
   blyg/remote.clj  — reply targets fetched (snapshots); webmentions sent
   blyg/cli.clj     — `lein blyg preview | import | publish | diff | push | mention | parity`
+  site/include.clj — what the site publishes: goddinpotty's entry/exit walk over the db
+  site/cli.clj     — `lein site published | parity | why` (design/static-site.md)
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
 ```

@@ -8,7 +8,7 @@
       (spit f (str "#merge* [#include \"default-config.edn\"\n {:exit-tags [\"Private\" \"x\" ; why\n"
                    "  \"y\"\n  #_ \"skipped\" ; note\n  #_ \"also\"\n  ]\n"
                    "  :real-base-url \"https://s.example/\" ; c\n  :output-dir \"/out\"}]"))
-      (is (= {:base-url "https://s.example/" :site-dir "/out" :state-file nil :exit-tags ["Private" "x" "y"]}
+      (is (= {:base-url "https://s.example/" :site-dir "/out" :state-file nil :main-page nil :exit-tags ["Private" "x" "y"]}
              (cli/goddinpotty-settings f)))
       (finally (.delete f)))))
 

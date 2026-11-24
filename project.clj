@@ -23,5 +23,6 @@
             "serve"  ["run" "-m" "hyperphor.thirdmind.ui.server"]
             "times"  ["run" "-m" "hyperphor.thirdmind.times"]
             "replay-ids" ["run" "-m" "hyperphor.thirdmind.identity-replay"]
-            "blyg"   ["run" "-m" "hyperphor.thirdmind.blyg.cli"]}
+            "blyg"   ["run" "-m" "hyperphor.thirdmind.blyg.cli"]
+            "site"   ["run" "-m" "hyperphor.thirdmind.site.cli"]}
   :jvm-opts ["--enable-native-access=ALL-UNNAMED"])

@@ -1,6 +1,6 @@
 # Static site generation, incrementally (replacing goddinpotty)
 
-Status: proposal, branch `static-gen`. 2026-11-22.
+Status: phase 1 (inclusion): page set matched and every difference explained; decisions pending (see Phase 1 results). Branch `static-gen`. 2026-11-23.
 
 ## Goal
 
@@ -56,8 +56,10 @@ goddinpotty decides this with a reachability walk (`database/compute-depths`, `b
   the navbar pages.
 - **Walk:** breadth-first over refs from every included block, stopping at exit points. Exit
   points are the `:exit-tags`: `Private`, `ExitPoint`, `therapist`, `Tarot`, `cringe` and so on.
-  An exit tag in a page's first block excludes the whole page. In an inner block it excludes
-  that block and its children. A `#Private` on `foo` also hides `foo/bar`.
+  A block (or page) is exit-tagged if it or one of its direct children carries an exit tag, and
+  that hides it and everything under it. So an exit tag in *any* top-level block hides the whole
+  page, and `- #Private` as the only child of a block hides that block. A `#Private` on `foo`
+  also hides `foo/bar`.
 - **Displayed:** the page must be included, and have content or children, or more than one
   included referrer.
 - Journals aren't published (`:daily-notes? false`). Today 2900 pages and 2143 journals give
@@ -220,21 +222,101 @@ The watcher gains a site action next to the blyg one.
 6. **The private site** (`:unexclude? true`, laptop-local, never pushed) as a second site
    config. It's the same code with inclusion turned off, written to its own dir.
 
+## Phase 1 results (2026-11-23)
+
+`site/include.clj` ports the walk; `lein site parity` compares it with goddinpotty's output
+(`lein site why <page>` shows the path that published a page, or that it's an exit point).
+Against the 22 Nov build: 1570 pages vs 1578, matched ignoring case (macOS file names are
+case-insensitive). Every remaining difference is explained:
+
+Fixed in ThirdMind along the way (each changes the db, not just the site):
+
+- **Legacy file names.** The graph has no `:file/name-format`, so Logseq reads `.` in a file name
+  as `/` (`goddinpotty.TODOs.md` is `goddinpotty/TODOs`; `R. Crumb.md` is `R/ Crumb`) unless
+  `title::` says otherwise. `parse/file-page-name` now does too.
+- **Aliases don't shadow file pages.** `psychoanalysis` has `alias:: Freud`, and `Freud.md`
+  exists: `[[Freud]]` is the Freud page. An alias naming a page with its own file is now a walk
+  edge between the two pages, not a redirect.
+- **Text before the first bullet** (`# Stalking` on Jacob Foster) is a block that indented
+  bullets nest under, as in Logseq. Before, its `#Private` child became a top-level block and
+  hid the whole page.
+- **Exit tags after punctuation**, as in `(#Private)` on `me`: Logseq doesn't link these, so
+  they aren't refs, but the walk counts them as exit tags (`parse/loose-tags`), as goddinpotty's
+  parser did.
+
+Only goddinpotty's (20):
+
+- Pages that exist only in Logseq's db, as an empty block Logseq adds when you visit a page
+  with no file: Fred Turner, I Am a Strange Loop, Kircher, Marshall McLuhan, Projects. Also
+  `Obsidian.md` at the graph root, outside `pages/`.
+- `.org` files, which ThirdMind doesn't read: `pages/doc/{node,pici,r,typescript}.org`, `org-mode
+  test`, At the Existentialist Cafe, Rage and Time. `pici` is the namespace parent of the 5
+  `PICI/*` pages, and `#pici` is how `research engine` is reached.
+- The Ministry for the Future: a top-level `- #Scrap` block. goddinpotty matches exit tags
+  case-sensitively, so `#Scrap` missed `scrap`, and only the `#Private` under it applied.
+  ThirdMind matches it, and by the top-level-block rule that hides the whole page.
+
+Only ThirdMind's (12):
+
+- Edited or created since the snapshot: Dafny, commitment.
+- Files Logseq's db had lost track of (no file, no blocks): non-grasping, ...and forgive them their debts.
+- Links inside `{{sidenote …}}`, which neither Logseq nor goddinpotty counts: Complice, anatman.
+- Links in property values (`Topics:: [[schizophrenia]]`), which Logseq counts and goddinpotty's
+  parser didn't: the three Zotero-import papers.
+- John McCarthy: Logseq's `lisp` is `pages/doc/lisp.org`, which collides with `Lisp.md`. ThirdMind
+  uses `Lisp.md`, which links to him.
+- Crumb and tathagatagarbha: the alias edge above.
+
+Case only (9): Logseq keeps the case of a page's first mention (`claude`), ThirdMind the file
+name (`Claude`). It doesn't matter on macOS, and on the server it matters only if links use the
+old case.
+
+**Blocks.** `lein site parity --blocks` takes the first words of every block we'd show on a
+page both sides publish, and looks for them in goddinpotty's outline (not its sidebar, whose
+incoming links quote other pages). 85 misses, none under an exit tag: the Lisp/Emacs `.org`
+collisions, pages edited since the snapshot, the LWMap pages' stray `---` front matter, and
+rendering differences (sidenotes splitting a sentence, hiccup tables, raw HTML, bare URLs,
+`#AskClaude` prompts shown as hover popups). Phase 2 repeats this against our own HTML.
+
+**The live system.** The parser and alias changes rename pages and move refs, and `lein watch`
+only re-ingests changed files, so `ammdi.db` must be rebuilt (deleted; its ids store is kept)
+when the watcher restarts on this code. Until then `lein site parity` without `--db` reads the
+old rules. With a rebuilt db, `lein blyg publish --dry-run` bumps 5 items, all because
+`[[Society of Mind]]` now links to `Marvin-Minsky∕Society-of-Mind` (the page goddinpotty
+links to) rather than a nonexistent `Society-of-Mind`. Re-versioning the Orality and Literacy
+thread also drops two empty blocks left over from the goddinpotty migration.
+
+Not ported: `public:: true` as an entry point. goddinpotty checks `:public?`, but nothing ever
+sets it.
+
 ## Open questions
 
 - **How exact is "parity"?** Byte-identical with goddinpotty is unrealistic and not worth
   the effort (Hiccup output differences, sidenote markup). Is "same pages, same URLs, same
-  visible content, CSS still works" the bar?
+  visible content, CSS still works" the bar? 
+  Answer: yes, and it doesn't even have to be that exact, not like the old look is sancrosanct
+
 - **Map widget.** Is moving to a client-side neighbourhood (one global file) acceptable, or
-  do the per-page specs stay?
+  do the per-page specs stay?  
+  Answer: Sure lets try it that way
+  
 - **Date ranges.** goddinpotty uses file edit times (`edit_times`). ThirdMind has per-block
   git-blame times (`times.clj`), which are more accurate but will change the dates shown.
   Use ThirdMind's?
+Yes
+
 - **Journals.** They're excluded today. Should a journal block that reaches an entry point
   (through a public page linking to it) still be dropped?
-- **#AskClaude → #AskedClaude** (`ask-claude-tags.md`). The hover rendering keys on the tag.
+  Yes
+-
+ **#AskClaude → #AskedClaude** (`ask-claude-tags.md`). The hover rendering keys on the tag.
   It's easier to land the tag split first, or to have the renderer accept both.
+ What's the question? 
+
 - **Where do dependencies live?** In the ThirdMind db (rebuilt with it, so a db rebuild
   forces a full site render), or in a separate file like the ids db?
+Definitely in the thirdmind db, 
+
 - **Recent changes page.** It's broken in goddinpotty for Logseq. ThirdMind has block times,
   so it could come back. In scope?
+Sure lets get that back.

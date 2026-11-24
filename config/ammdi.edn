@@ -13,4 +13,11 @@
   :mount       "ammdi/blyg"                                       ; the blyg's dir in site-repo
   :remote      "website"
   :auto-publish? true                                             ; lein watch publishes + pushes #blyg edits
-  :quiet-ms    120000}}                                           ; ... once they've been still this long
+  :quiet-ms    120000}                                            ; ... once they've been still this long
+
+ ;; lein site (design/static-site.md). Exit tags, main page and output dir come from goddinpotty's
+ ;; config until cutover, so blyg and the site share one exit-tag list.
+ :site
+ {:goddinpotty "/opt/mt/repos/goddinpotty/resources/ammdi-config.edn"
+  :entry-tags  ["EntryPoint"]
+  :entry-pages ["Index"]}}                                        ; navbar pages, besides the main page
