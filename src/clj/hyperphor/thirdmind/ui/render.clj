@@ -39,8 +39,8 @@
 (defn- page-link [ctx name text class]
   (if-let [href-of (:page-href ctx)]
     (if-let [href (href-of name)]
-      (format "<a class=\"%s\" href=\"%s\">%s</a>" class (escape href) (label text))
-      (label text))
+      (format "<a class=\"%s\" href=\"%s\">%s</a>" (get ctx :link-class class) (escape href) (label text))
+      ((get ctx :unlinked identity) (label text)))
     (let [key (:key ((:page ctx) name))]
       (format "<a class=\"%s%s\" href=\"%s\">%s</a>"
               class (if (:stub ((:page ctx) name)) " stub" "") (page-href key) (label text)))))
@@ -58,7 +58,9 @@
     (if-let [href (if-let [f (:block-href ctx)] (f id) (block-href id))]
       (format "<a class=\"bref\" href=\"%s\">%s</a>" (escape href) (label (plain-text content)))
       (format "<span class=\"bref\">%s</span>" (label (plain-text content))))
-    (format "<span class=\"bref missing\">((%s))</span>" (escape id))))
+    (if-let [f (:missing-block ctx)]
+      (f id)
+      (format "<span class=\"bref missing\">((%s))</span>" (escape id)))))
 
 ;;; Images and asset links. Logseq paths (../assets/...) often hold spaces and ?, which
 ;;; commonmark won't take as a destination, so these go straight to HTML too.
@@ -112,6 +114,12 @@
 
 (declare link-refs)
 
+(defn- tag-link
+  "A #tag: ctx's :tag-html for it if that gives one, else a link labelled (:tag-prefix, default #) + name."
+  [ctx t]
+  (or (when-let [f (:tag-html ctx)] (f t))
+      (page-link ctx t (str (get ctx :tag-prefix "#") t) "tag")))
+
 (defn- macro [ctx m name arg]
   (let [url (macro-url arg)]
     (case (str/lower-case name)
@@ -120,7 +128,9 @@
       "embed"    (if-let [[_ id] (re-find parse/block-ref-re arg)]
                    (block-link ctx id)
                    (link-refs ctx arg))
-      "sidenote" (str "<span class=\"sidenote\">" (link-refs ctx arg) "</span>")
+      "sidenote" (if-let [f (:sidenote ctx)]
+                   (f (link-refs ctx arg))
+                   (str "<span class=\"sidenote\">" (link-refs ctx arg) "</span>"))
       (str "<span class=\"macro\">" (escape m) "</span>"))))
 
 (def ^:private ref-re
@@ -140,12 +150,12 @@
                        asset-dest (format "<a class=\"asset\" href=\"%s\">%s</a>"
                                           (escape (asset-href asset-dest)) (label asset-label))
                        link-page (page-link ctx link-page link-label "ref")
-                       btag (page-link ctx btag (str "#" btag) "tag")
+                       btag (tag-link ctx btag)
                        wiki (page-link ctx wiki wiki "ref")
                        bref (block-link ctx bref)
                        italic (str "<em>" (link-refs ctx italic) "</em>")
                        :else (let [t (parse/trim-tag tag)]
-                               (str (page-link ctx t (str "#" t) "tag") (subs tag (count t))))))))
+                               (str (tag-link ctx t) (subs tag (count t))))))))
 
 (defn link-logseq
   "Content with Logseq refs outside code turned into HTML links."
@@ -170,7 +180,9 @@
   block's content in place, as Logseq does. ctx:
   :page  (fn [name] {:key canonical-page-key :stub bool})
   :block (fn [id] content or nil)
-  :page-href, :block-href (optional) (fn [name-or-id] href, or nil for plain text) replace UI links"
+  :page-href, :block-href (optional) (fn [name-or-id] href, or nil for plain text) replace UI links
+  optional, with :page-href: :link-class, :unlinked (fn [label-html]), :tag-prefix, :tag-html (fn [tag]
+  html or nil), :sidenote (fn [inner-html]), :missing-block (fn [id] html for a ref :block can't give)"
   [ctx content]
   (let [id     (second (or (re-matches parse/block-ref-re (str/trim content))
                            (re-matches #"\{\{embed\s+\(\(([^()\s]+)\)\)\s*\}\}" (str/trim content))))
@@ -179,7 +191,8 @@
     (if (and target (< depth max-embed-depth))
       (str "<div class=\"transclusion\">"
            (block-html (assoc ctx ::depth (inc depth)) target)
-           (format "<a class=\"bref-src\" href=\"%s\" title=\"referenced block\">↗</a>" (block-href id))
+           (when-let [href (if-let [f (:block-href ctx)] (f id) (block-href id))]
+             (format "<a class=\"bref-src\" href=\"%s\" title=\"referenced block\">↗</a>" (escape href)))
            "</div>\n")
       (markdown->html (link-logseq ctx content)))))
 

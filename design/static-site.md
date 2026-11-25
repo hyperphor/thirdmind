@@ -1,6 +1,6 @@
 # Static site generation, incrementally (replacing goddinpotty)
 
-Status: phase 1 (inclusion): page set matched and every difference explained; decisions pending (see Phase 1 results). Branch `static-gen`. 2026-11-23.
+Status: phase 1 (inclusion) done, decisions pending; phase 2 (renderer) built, not yet live. Branch `static-gen`. 2026-11-23.
 
 ## Goal
 
@@ -288,6 +288,54 @@ thread also drops two empty blocks left over from the goddinpotty migration.
 
 Not ported: `public:: true` as an entry point. goddinpotty checks `:public?`, but nothing ever
 sets it.
+
+## Phase 2 results (2026-11-23)
+
+`site/render.clj` renders every published page in goddinpotty's markup, and `build!` writes them,
+`index.html`, goddinpotty's statics and the images published blocks use. `lein site build`
+writes to `target/site` (config `:site :build-dir`) and refuses the live site dir before
+cutover. A rebuild with nothing changed writes nothing (contents compared; images by size and
+mtime), and a manifest in the output dir (`.thirdmind-site.edn`) lets a build delete what the
+last one wrote and this one doesn't.
+
+- **Blocks** go through `ui/render` (commonmark), with hooks added for the site: `pagelink`
+  links, `<span class="empty">` for unpublished pages, tags without `#`, goddinpotty's sidenote
+  and `#AskClaude` hover markup. Block refs and embeds show their target only if it's published.
+  Block properties render as goddinpotty's `<li><b>key</b>: value</li>`.
+- **Anchors** are a block's `id::` where it has one (goddinpotty's anchors, which blyg links
+  use), else its ThirdMind id.
+- **Widgets:** About, Search, Page Contents, Page Tree, Incoming links, Twin Pages. Calendar is
+  journals-only, so not needed. Map is phase 3.
+- **Search index and Index page** (pulled forward from phase 3): `assets/index.js` has a row per
+  published page (url, title, aliases, the outline's text, date of the latest edit, depth from
+  an entry page, size). search.js and the Index page's grid.js both read it. Left for phase 3:
+  the Map widget, the Map page and `graphs/pages.json`.
+- **Dates** come from block times (`times.clj`), over the page's shown blocks.
+- **Fetch caches:** Twin Pages and tweet embeds read goddinpotty's `.enduro.d` caches (read
+  only; config `:twin-cache`, `:tweet-cache`). Pages and tweets not in them get no Twin Pages
+  card, and a client-side tweet embed. Fetching new ones is still to do.
+
+`lein site parity --html` compares each built page's outline words with goddinpotty's: median
+overlap 0.998 over 1558 pages, 111 below 0.9. Those are the phase 1 differences (the `.org`
+collisions, pages edited since the snapshot), tweets missing from the embed cache, pages with
+nothing but properties (where only the dates differ), and the items below.
+
+It also checks for leaks across the whole site. Every block the walk left out (journals,
+unpublished pages, hidden blocks) is matched against the full body of every built page,
+sidebar included, first on its first 3 to 6 words, then on its first 15. Text that a published
+block or page title also contains doesn't count. 6 hits remain, all text that is also public:
+two quote tweets we embed, two are an Incoming links "from <page>" label run into a published
+block, one is a book title listed on both a private and a public page, and one is a Twitter
+account name. A reference to an unpublished block renders as nothing (it used to show the
+block's id).
+
+The `ui/render` change also reaches blyg: a transclusion no longer gets a "↗" link to a
+`/block/…` URL the site doesn't have, so blyg items quoting a block get a new version the next
+time they publish (2 at present).
+
+- goddinpotty's special tags (`#WordHistory` charts, `#WordCount`) aren't ported.
+- No `<!DOCTYPE html>`, as goddinpotty, so the CSS behaves the same (quirks mode).
+- Page Tree sorts case-insensitively rather than by numeric prefix.
 
 ## Open questions
 

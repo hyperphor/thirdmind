@@ -20,4 +20,14 @@
  :site
  {:goddinpotty "/opt/mt/repos/goddinpotty/resources/ammdi-config.edn"
   :entry-tags  ["EntryPoint"]
-  :entry-pages ["Index"]}}                                        ; navbar pages, besides the main page
+  :entry-pages ["Index"]                                          ; navbar pages, besides the main page
+  :build-dir   "target/site"                                      ; lein site build; not the live site until cutover
+  :static-dir  "/opt/mt/repos/goddinpotty/resources/public"       ; css/js copied into assets/
+  :twin-cache  "/opt/mt/repos/goddinpotty/.enduro.d/twin-pages-content"  ; goddinpotty's fetch caches, read only
+  :tweet-cache "/opt/mt/repos/goddinpotty/.enduro.d/embed-twitter"
+  :short-title "AMMDI"
+  :description "AMMDI is an open-notebook hypertext writing experiment aka digital garden, authored by Mike Travers"
+  :google-analytics "G-SK8PZVFHTW"
+  :site-css    ["assets/hyper-roam.css"]
+  :navbar      [["All Pages" "Index"]]
+  :colophon    ["Copyright © " [:a {:href "http://hyperphor.com" :style "color: white;"} "Hyperphor"] " 2020-2026"]}}
