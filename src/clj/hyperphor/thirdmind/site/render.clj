@@ -437,13 +437,18 @@
              [_ p] (re-seq asset-ref-re (str (:content (fetch u))))]
          (str/trim p))))
 
+;;; From goddinpotty (default.css with its .imga fix); elasticlunr is MIT, its header kept
+(def ^:private bundled
+  ["default.css" "hyper-roam.css" "external-link.svg" "search.js" "elasticlunr.min.js" "grid.js"
+   "map.js" "thirdmind-site.css"])
+
 (defn outputs
   "{path html} for the whole site, less copied files. Page files get :page-suffix (eg \".html\"); links don't."
   [{sfx :page-suffix :as ctx}]
   ;; .nojekyll: GitHub Pages would otherwise drop files starting with _ (eg __Erlebnis__)
-  (into {"index.html" (index-html ctx) ".nojekyll" "" "assets/index.js" (search-index ctx)
-         "graphs/map.json" (map-data ctx) "assets/map.js" (slurp (io/resource "site/map.js"))
-         "assets/thirdmind-site.css" (slurp (io/resource "site/thirdmind-site.css"))}
+  (into (into {"index.html" (index-html ctx) ".nojekyll" "" "assets/index.js" (search-index ctx)
+               "graphs/map.json" (map-data ctx)}
+              (for [f bundled] [(str "assets/" f) (slurp (io/resource (str "site/" f)))]))
         (for [[path html] (concat (for [[p slug] (:slugs ctx)] [slug (page-html ctx p)])
                                   ;; a graph page named Index or Map would be overwritten: the generated one wins
                                   [[(index-slug ctx) (index-page ctx)] ["Map" (map-page ctx)]])]
@@ -465,15 +470,16 @@
     true))
 
 (defn build!
-  "Write the site into out: pages and index.html if changed, statics from :static-dir and referenced
-  graph images into assets/; delete what the previous build (out's manifest) wrote that's gone.
+  "Write the site into out: pages, index.html and bundled assets if changed, statics from :static-dir
+  and referenced graph images into assets/; delete what the previous build (out's manifest) wrote that's gone.
   Returns counts."
   [ctx out]
   (let [outd    (io/file out)
-        files   (outputs ctx)
         statics (for [^java.io.File f (some-> (:static-dir ctx) io/file .listFiles)
                       :when (and (.isFile f) (not (re-find #"^[#.]|^README" (.getName f))))]
                   [(str "assets/" (.getName f)) f])
+        ;; a :static-dir file replaces the bundled one of the same name
+        files   (apply dissoc (outputs ctx) (map first statics))
         images  (for [p (image-files ctx)
                       :let [f (io/file (:graph-dir ctx) "assets" p)] :when (.isFile f)]
                   [(str "assets/" p) f])

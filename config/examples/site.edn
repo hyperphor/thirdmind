@@ -22,9 +22,8 @@
   ;; :description "..."                ; og:description
   ;; :navbar      [["All Pages" "Index"]]   ; [label page-name] links beside the main page
   ;; :colophon    ["Copyright © 2026 Me"]   ; footer, as hiccup
-  ;; :site-css    ["assets/my.css"]     ; extra stylesheets, linked after the built-in ones
+  ;; :site-css    ["assets/hyper-roam.css"]  ; extra stylesheets, linked after the built-in ones
   ;; :page-suffix ".html"             ; page files as Foo.html, links still Foo (GitHub Pages, Netlify)
-  ;; :static-dir  "/path/to/assets"     ; files copied into assets/; without goddinpotty's css and
-  ;;                                    ; search scripts here the site looks unfinished (README: Styling and search)
+  ;; :static-dir  "/path/to/assets"     ; files copied into assets/, replacing bundled ones of the same name
   ;; :google-analytics "G-XXXXXXX"
   }}

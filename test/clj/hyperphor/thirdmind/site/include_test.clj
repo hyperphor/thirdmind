@@ -74,6 +74,8 @@
         page #(slurp (io/file out %))]
     (is (= 0 (:deleted (render/build! ctx out))))
     (is (.isFile (io/file out ".nojekyll")) "so GitHub Pages keeps _-prefixed pages")
+    (is (every? #(.isFile (io/file out "assets" %)) ["default.css" "search.js" "elasticlunr.min.js" "grid.js"])
+        "goddinpotty's css and scripts are bundled")
     (is (.isFile (io/file out "Home")))
     (is (not (.exists (io/file out "Secret"))))
     (let [linked (page "Linked")]
@@ -106,4 +108,8 @@
       (is (some #(= "Linked" (:url %)) rows))
       (is (not-any? #(re-find #"a child|whole page private" (:body %)) rows) "the search index has only shown text"))
     (is (= {:written 0 :copied 0 :deleted 0} (select-keys (render/build! ctx out) [:written :copied :deleted]))
-        "a second build changes nothing")))
+        "a second build changes nothing")
+    (let [static (.toFile (java.nio.file.Files/createTempDirectory "site-static" (make-array java.nio.file.attribute.FileAttribute 0)))]
+      (spit (io/file static "default.css") "/* mine */")
+      (is (= 1 (:copied (render/build! (assoc ctx :static-dir (str static)) out))))
+      (is (= "/* mine */" (page "assets/default.css")) "a :static-dir file replaces the bundled one"))))

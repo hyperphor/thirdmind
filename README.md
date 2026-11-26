@@ -39,10 +39,6 @@ included, come from Clojars on first run.
    the page that should be the front page. The [configuration](#configuration) section lists
    every setting.
 
-   For the site's stylesheet, search box and page index you also need five files from
-   goddinpotty; see [Styling and search](#styling-and-search). The site builds without them,
-   but looks unfinished.
-
 2. Build:
 
    ```bash
@@ -114,19 +110,15 @@ naming `"Index"` links to it either way.
 ### Styling and search
 
 ThirdMind's page markup is that of [goddinpotty](https://github.com/mtravers/goddinpotty), an
-older static site generator for Logseq graphs, and it uses goddinpotty's stylesheet and search
-scripts, which aren't yet bundled here. Get `default.css`, `hyper-roam.css`, `search.js`,
-`elasticlunr.min.js` and `grid.js` from goddinpotty's
-[`resources/public/`](https://github.com/mtravers/goddinpotty/tree/master/resources/public)
-folder, put them in a folder of your own, and point `:static-dir` at it; the build copies that
-folder's files into `assets/`. Pages always link `assets/default.css` and the two scripts;
-`hyper-roam.css` is optional styling, linked only if you add `"assets/hyper-roam.css"` to
-`:site-css`. Without them, pages render with Bootstrap's defaults: readable,
-but the navigation bar is hard to see, the search box does nothing and the Index table is
-empty. The search index itself (`assets/index.js`) and the maps are built either way.
+older static site generator for Logseq graphs, and the build writes goddinpotty's stylesheet
+(`default.css`) and search and Index-table scripts into `assets/`. Its colour theme,
+`hyper-roam.css`, is written too but linked only if you add `"assets/hyper-roam.css"` to
+`:site-css`.
 
-Add your own stylesheets the same way: put the file in `:static-dir` and list it in `:site-css`
-as `"assets/<name>.css"`.
+To change the look, put your own stylesheet in a folder, point `:static-dir` at it, and list
+it in `:site-css` as `"assets/<name>.css"`; the build copies that folder's files into
+`assets/`. A file there with the same name as a bundled one, such as `default.css`, replaces
+it.
 
 ## Configuration
 
@@ -161,7 +153,7 @@ in.
 | `:description` | page title | `og:description` |
 | `:colophon` | | Footer contents, as [hiccup](https://github.com/weavejester/hiccup) |
 | `:site-css` | | Extra stylesheet URLs, linked after the built-in ones |
-| `:static-dir` | | Files to copy into `assets/` (see [Styling and search](#styling-and-search)) |
+| `:static-dir` | | Files to copy into `assets/`, replacing bundled ones of the same name (see [Styling and search](#styling-and-search)) |
 | `:google-analytics` | | A Google Analytics id |
 | `:blyg?` | true when `:blygger` is set | Show a "Blyg" link (to `blyg/`) in the navbar |
 | `:goddinpotty` | | A goddinpotty config to take `:exit-tags`, `:main-page`, `:base-url` and `:output-dir` from. Only for migrating from goddinpotty |
@@ -283,4 +275,5 @@ mkdir -p checkouts && ln -s ../../tunamelt checkouts/tunamelt
 
 ## License
 
-Apache 2.0; see [LICENSE.md](LICENSE.md).
+Apache 2.0; see [LICENSE.md](LICENSE.md). `resources/site/elasticlunr.min.js` is
+[elasticlunr](http://elasticlunr.com), under the MIT license.

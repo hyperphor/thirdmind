@@ -1,0 +1,546 @@
+/* Boostrap icons */
+@import url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css");
+
+/* These are ugly; you should pick better ones for your site */
+:root {
+    --background: white;
+    --navbar-background: green;
+    --navbar-foreground: red; 
+    --footer-background: cyan;
+    --link: pink;
+    --blockquote: gray;  
+    --blockquote-border: darkred;
+    --body-face: EB Garamond;
+    --header-face: Varela Round;
+}
+
+body {
+    background-color: var(--background);
+    font-family: var(--body-face);
+    font-size: 14pt;
+    line-height: 1.4; 
+}
+
+.h1, .h2, .h3, .h4, .h5, .h6, h1, h2, h3, h4, h5, h6 {
+    font-family: var(--header-face);
+}
+
+.container {
+    max-width: 1300px;
+}
+
+.navbar-x {
+    margin-left: 10px;
+}
+
+.main {
+    margin-top: 60px;
+    margin-left: 10px;
+}
+
+.block {
+    margin-bottom: 15px;
+    white-space: pre-line;	/* preserve newline */
+}
+
+.title {
+    display: block;
+    margin-bottom: 20px;
+}
+
+hr {
+    width: 100%;    /* Otherwise hr s do not show up in blocks... */
+}
+
+.navbar {
+    font-family: var(--header-face);
+    background-color: var(--navbar-background);
+    z-index: 1000;		/* should be greater than .graph */
+}
+
+.navbar-brand {
+    /* margin-left: 26px; */
+}
+
+.nav-link {
+    color: var(--navbar-foreground) !important;	
+    font-weight: bold;
+    padding-right: 1rem;
+    padding-left: 1rem;
+}
+
+ul {
+  list-style: none; /* Remove default bullets */
+}
+
+li {
+    display: flex;
+}
+
+.page-content {
+    /* A kludgy way to shift page content left so it aligns with title */
+    margin-left: -80px;
+}
+
+/* Gyrations to get colored list bullets (which I don't even use any more, but should be an option )*/
+.main ul li::before {
+    /* content: "\2022";  bullet */
+    /* content: "\2aa2";  my fave ⪢ */
+    /* content: "\30fb";  */
+    color: var(--link);
+  /* color: #4E176E; 		 */
+    display: inline-block; 
+    vertical-align: top;
+    margin-right: 0.5em;
+}
+
+/* Links */
+
+a {
+    color: var(--link); 
+    font-weight: 550;	/* slightly bold */
+    text-decoration: none;
+}
+
+a:hover {
+    background-color: #eeeee0; 
+    color: var(--link) !important; 
+    box-shadow: 0 0 0 5px #eeeee0;
+}
+
+/* TODO these should be a bit more visually distinctive, but not sure how  */
+.pagelink {
+  font-family: var(--header-face);
+  font-size: 91%;
+}
+
+.external:hover {
+    background-image: url(external-link.svg);
+    background-position: center right;
+    background-repeat: no-repeat;
+    padding-right: 13px;
+}
+
+.empty {
+  pointer-events: none;
+  color: red;
+  opacity: 0.5;
+  font-family: var(--header-face);
+}
+
+.self {
+    color: var(--navbar-foreground);
+    pointer-events: none;
+}
+
+
+h1, h2, h3 {
+    display: inline;
+}
+
+h2 {
+    font-size: 22px;
+}
+
+blockquote {
+    white-space: break-spaces;
+    background: var(--blockquote);
+    padding-left: 20px;
+    padding-right: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    margin-bottom: 0px;
+    border-left: 3px solid var(--blockquote-border);
+    border-radius: 10px; 	/* waffling over this */
+}
+
+/* Incoming links (sidebar) */
+.incoming {
+
+}
+
+.incoming h3 {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.incoming .block {
+    font-size: 10pt;
+}
+
+/* Hover tags (eg #AskClaude) render as ugly clutter in the tight incoming-links
+   list, so just hide them there; see design/ask-claude.md */
+.incoming .hover-tag-container {
+    display: none;
+}
+
+.codeblock {
+    white-space: break-spaces;    
+}
+
+
+/* Semantically, a link to a page that doesn't exist yet. We could just render as text, but this seems better */
+.missing {
+    color: gray;
+}
+
+.block-ref {
+     border: 1px solid gray;
+     padding: 5px;
+}
+
+.nondent {
+    padding-inline-start: 0;
+}
+
+/* Main page content */
+.main {
+}
+
+img {
+    max-width: 90%;		/* TODO should have click-to-see-full-size as in Roam */
+    margin-left: auto;		/* center */
+    margin-right: auto;
+}
+
+.imga {
+    display: block;
+}
+
+/* block + auto margins centers the image, so the link's hover highlight is symmetric */
+.imga img {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.image-border {
+    border: 1px solid lightgray;
+    padding: 5px;
+}
+
+/* center videos (TODO not working, I think because they are within a <span>?a) */
+iframe {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.date {
+    font-family: var(--header-face);
+    font-size: small;
+}
+
+.edit {
+    margin-left: 5px;
+}
+
+.footer {
+    font-family: var(--header-face);
+    background-color: var(--footer-background);
+}
+
+/* For recent changes, should have more semantic name */
+.pheader {
+    margin-top: 1em;
+    font-family: var(--header-face);    
+}
+
+.ragged {
+    border-radius: 25px 15px 225px 15px/15px 225px 15px 255px;    
+    border:dashed 3px var(--navbar-background);
+    margin: 5px;
+    margin-left: 15px;
+    padding-left: 7px;
+    padding-top: 7px;
+}
+
+.ragged .block {
+    font-size: 10pt;
+}
+
+/* LH widget related */
+
+.sidebar {
+  overflow-x: hidden;
+}
+
+.minicard-body {
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 11pt;
+}
+
+.gp-card-body {
+    /* Will indent lines of long links */
+    padding-left: 20px;
+    text-indent: -8px;
+    font-size: 12pt;
+}
+
+
+/* Search related */
+
+#searchh {
+    line-height: 2;
+}
+
+#searcht {
+    float: right;
+    display: flex;
+    width: 70%;
+
+}
+
+#searchb {
+    padding: 0.25rem;
+}
+
+#searcho {
+    margin-left: 10px;
+    margin-top: 5px;
+    display: none;		/* Changed when results generated */
+}
+
+.searchentry {
+    text-indent: -5px;
+}
+
+/* Empty search results */
+.searchnada {
+    color: gray;
+    font-style: italic;
+    padding-left: 30px;
+}
+
+/* Graph related */
+
+.graph {
+    z-index: 998;		/* big but less than .navbar */
+    width: 100%;
+    /* height is computed */
+}
+
+/* Sidenote related */
+
+/* Sacrificing a goat to the CSS gods */
+.sidenote {
+    clear: right;
+    position: absolute;
+    display: inline-flex;	/* gets the vertical alignment right */
+    left: 1120px;
+    width: 360px;
+    padding-right: 100px;
+    /* padding-top: 10px;  puts some whitespace on top, but fucks with alignment of asterisks */    
+    padding-bottom: 10px;
+    font-size: 80%;
+    z-index: 999;
+    background: white;
+}
+
+.sidenote > .block {
+    display: inline;
+}
+
+.sidenote > .nondent {
+    display: inline;
+}
+
+
+/* this is kind of narrow, probably should widen the margin */
+/* actually doesn't work as well as I thought */
+.left-sidenote {
+    left: -100px;
+    width: 100px;
+}
+
+/* for sidenote supscripts */
+/* Incredible rigamarole, CSS is an abomination unto god */
+
+.sidenote-container {
+    break-before: avoid;
+    break-after: avoid;
+    break-inside: avoid;
+}
+
+.superscript {
+    position: relative;
+    top: -0.3rem;
+    margin-left: 0;
+    color: var(--link);
+}
+
+.superscript::before {
+    content: "*"; 
+}
+
+/* combine with .superscript to render in sidebar */
+.side {
+    left: -0.5rem;
+    width: 0px;
+    color: var(--link);
+    float: left;
+}
+
+.error {
+    background: pink;
+    border: 1px solid red;
+}
+
+/* Hover tags (eg #AskClaude) related: see design/ask-claude.md and :hover-tags config */
+
+.hover-tag-container {
+    position: relative;
+    display: inline-block;
+}
+
+.hover-tag-lozenge {
+    display: inline-block;
+    padding: 0px 10px;
+    border-radius: 999px;      /* pill shape */
+    background: #eef0f3;
+    border: 1px solid #d0d3d8;
+    color: #555;
+    font-size: 85%;
+    font-style: italic;
+    cursor: pointer;
+    user-select: none;
+}
+
+.hover-tag-container:hover .hover-tag-lozenge {
+    background: #dfe3e8;
+}
+
+/* Clicked (pinned) state: toggled by toggleHoverTag in search.js. Switching the
+   container itself to block-level (rather than leaving it inline-block with a
+   block-level popup child) avoids a baseline-alignment trap: an inline-block's
+   baseline is its *last* line box, so any text following the container on the same
+   line would otherwise jump down to align with the bottom of the popup instead of
+   flowing normally beneath it. The lozenge also gets a "pressed" look. */
+.hover-tag-container.inserted {
+    display: block;
+}
+
+.hover-tag-container.inserted .hover-tag-lozenge {
+    background: #4a7c59;
+    border-color: #3d6649;
+    color: white;
+    font-style: normal;
+    cursor: pointer;
+}
+
+.hover-tag-popup {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 5px;
+    min-width: 500px;
+    max-width: 700px;
+    padding: 10px;
+    background: white;
+    border: 1px solid gray;
+    border-radius: 5px;
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+    font-size: 80%;
+    font-style: normal;
+    z-index: 999;
+    text-align: left;
+}
+
+.hover-tag-container:not(.inserted):hover .hover-tag-popup {
+    display: block;
+}
+
+/* ...and the popup itself leaves the floating-overlay layout behind and drops into
+   the page's normal flow as a permanent, distinctly-styled callout (rather than
+   the transient hover preview above). */
+.hover-tag-container.inserted .hover-tag-popup {
+    display: block;
+    position: static;
+    margin: 10px 0;
+    min-width: 0;
+    max-width: none;
+    background: #f1f8f1;
+    border: 1px solid #4a7c59;
+    border-left: 4px solid #4a7c59;
+    box-shadow: none;
+}
+
+/* When we show all blocks, highlight the private ones */
+.excluded {
+    background: lightgoldenrodyellow;
+    padding-top: 10px;		/* don't ask */
+}
+
+/* This makes internal hrefs scroll to visibility. See https://css-tricks.com/hash-tag-links-padding/ */
+ul::before {
+  display: block;
+  content: " ";
+  margin-top: -65px;
+  height: 65px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ...but a hover-tag-popup's nested <ul>s (see hover-tag-hiccup in rendering.clj) are
+   never #anchor scroll targets, so the -65px pulls the popup's real (clickable)
+   content up over the lozenge that opens it -- intercepting clicks meant for the
+   lozenge. Neutralize the trick there. */
+.hover-tag-popup ul::before {
+  display: none;
+}
+
+.ulz {
+    padding-left: 0;
+}
+
+/* Gets removed by js when running from a local server */
+.local {
+    display: none;
+}
+
+/* Blyg */
+.blyg .card {
+  background-color: #eff7ff;
+}
+
+.blyg .pin-badge {
+  font-size: 0.75rem;
+}
+
+.blyg .blyg-title {
+  font-weight: 600;
+  font-size: 1.1em;
+  line-height: 1.35;
+  margin-bottom: 0.35rem;
+}
+
+/* A title:: property is shown above the content, so a baked first-line title is just text */
+.blyg .titled .item-content .blyg-title {
+  font-weight: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  margin-bottom: 0;
+}
+
+/* A thread's own points are <blockquote>s on the wire (§10.2) but aren't
+   quotes -- show them as bulleted items. Remote transclusions keep quote style. */
+.blyg blockquote.blyg-transclusion:not([data-blyg-origin]) {
+  position: relative;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0 0 0 1.1rem;
+  margin: 0.4rem 0;
+}
+
+.blyg blockquote.blyg-transclusion:not([data-blyg-origin])::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: calc(0.8em - 2.5px);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7f8c99;
+}
