@@ -13,6 +13,7 @@
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.site.include :as include]
             [hyperphor.thirdmind.site.render :as render]
+            [hyperphor.thirdmind.watch :as watch]
             [hyperphor.tunamelt.core :as t]))
 
 ;;; Pages goddinpotty generates rather than renders from the graph
@@ -20,18 +21,19 @@
 
 (defn settings
   "Site settings from a config's :site (include/compute opts among them), filling exit tags, main
-  page, base URL and output dir from goddinpotty's config."
-  [{:keys [site graph realm]}]
+  page, base URL and output dir from goddinpotty's config. Exit tags default to [\"Private\"]."
+  [{:keys [site graph realm blygger]}]
   (let [gp   (some-> (:goddinpotty site) blyg/goddinpotty-settings)
         main (or (:main-page site) (:main-page gp))]
     (merge (dissoc site :goddinpotty)
-           {:exit-tags   (or (:exit-tags site) (:exit-tags gp))
+           {:exit-tags   (or (:exit-tags site) (:exit-tags gp) ["Private"])
             :entry-tags  (:entry-tags site ["EntryPoint"])
             :entry-block-tags (:entry-block-tags site blyg/control-tags)
             :entry-pages (cons main (:entry-pages site))
             :main-page   main
             :base-url    (or (:base-url site) (:base-url gp))
             :graph-dir   graph
+            :blyg?       (:blyg? site (boolean blygger))
             :graph-name  (or (:graph-name site) realm)
             :output-dir  (or (:output-dir site) (:site-dir gp))})))
 
@@ -112,7 +114,8 @@
 
 (def ^:private usage
   "lein site published [--list] | parity [<goddinpotty-output-dir>] [--blocks] | why <page name>[, <page name>...]
-  | build [--out dir]   (default the config's :site :build-dir; never the live site before cutover)
+  | build [--out dir]   (default :site :build-dir, else :output-dir; with :goddinpotty set, never its live site)
+  build first syncs the db with the graph (building it if missing), unless --no-sync.
   all take --db path and --rebuild; diff, verify and push are still to come (design/static-site.md)")
 
 (defn- overlap
@@ -183,13 +186,23 @@
                        [(some-> (config/default-file) config/load-config) more])
         _            (when-not cfg (println "No config (config/*.edn)") (System/exit 1))
         opts         (settings cfg)
+        _            (when-not (:main-page opts)
+                       (println "No main page: set :site {:main-page \"<page name>\"} in" (:file cfg)) (System/exit 1))
         db           (or (second (drop-while #(not= "--db" %) more)) (:db cfg))
-        more         (remove #{"--db" db} more)]
-    (if (some #{"--rebuild"} more)
+        more         (remove #{"--db" db} more)
+        more         (if (= cmd "build") more (cons "--no-sync" more))]
+    (cond
+      (some #{"--rebuild"} more)
       (do (when (= db (:db cfg)) (println "--rebuild needs a --db other than the config's") (System/exit 1))
           (core/fresh-store! db (:realm cfg))
           (ingest/ingest! (:graph cfg) (:realm cfg)))
-      (t/configure! {:store db :realm (:realm cfg)}))
+
+      ;; catch up with the graph (or build a new db), as lein watch does on start
+      (not (some #{"--no-sync"} more))
+      (do (t/configure! {:store db :realm (:realm cfg)})
+          (watch/init! {:dir (:graph cfg) :realm (:realm cfg) :db db}))
+
+      :else (t/configure! {:store db :realm (:realm cfg)}))
     (let [{:keys [pages hidden] :as inc} (include/published (:realm cfg) opts)]
       (case cmd
         "published"
@@ -197,8 +210,10 @@
             (when (some #{"--list"} more) (run! println (sort (keys (slugs pages))))))
 
         "build"
-        (let [out (or (second (drop-while #(not= "--out" %) more)) (:build-dir opts) "target/site")]
-          (when (= (.getCanonicalPath (io/file out)) (some-> (:output-dir opts) io/file .getCanonicalPath))
+        (let [out (or (second (drop-while #(not= "--out" %) more)) (:build-dir opts) (:output-dir opts) "target/site")]
+          ;; while goddinpotty still writes the live site, don't build over it
+          (when (and (get-in cfg [:site :goddinpotty])
+                     (= (.getCanonicalPath (io/file out)) (some-> (:output-dir opts) io/file .getCanonicalPath)))
             (println "Not building into the live site dir" out "before cutover") (System/exit 1))
           (println (render/build! (render/ctx (:realm cfg) opts inc) out) "→" out))
 

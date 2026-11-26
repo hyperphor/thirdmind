@@ -18,12 +18,16 @@
 
 (defn- parent-name [name] (second (re-find #"^(.*)/(.*?)$" name)))
 
+;;; Logseq's page property public:: true makes a page an entry point, as in goddinpotty
+(defn- public? [o] (contains? #{"true" true} (:prop/public o)))
+
 ;;; A page with a file has a body: even a properties-only file has a block (Logseq's pre-block).
 (defn- has-body? [o] (not (:stub o)))
 
 (defn compute
   "{:pages #{published page uri} :included #{uri} :hidden #{block uri on a published page, left out}
   :via {included uri → uri it was reached from} :exit? fn}.
+  Entry points: public:: true pages, :entry-pages, and pages tagged with an :entry-tag.
   opts: :realm, :aliases {alias-key page-key}, :exit-tags, :entry-tags, :entry-pages (names),
   :entry-block-tags (names: a block carrying one, and its subtree, less anything exit-tagged, starts the walk)."
   [objs {:keys [realm aliases exit-tags entry-tags entry-pages entry-block-tags]}]
@@ -54,7 +58,7 @@
         bentry   (set (map canon entry-block-tags))
         subtree  (fn sub [u] (when-not (exit-tagged? u) (cons u (mapcat sub (children u)))))
         starts   (concat
-                  (for [[u o] objs :when (and (page-uri? u) (node? u) (or (entry-p u) (tagged? refs entry u)))] u)
+                  (for [[u o] objs :when (and (page-uri? u) (node? u) (or (entry-p u) (public? o) (tagged? refs entry u)))] u)
                   (distinct (for [[u o] objs
                                   :when (and (not (page-uri? u)) (some bentry (concat (:tags o) (:refs o))))
                                   s (subtree u)]

@@ -3,3 +3,6 @@
 
 blockquote > p:last-child, li.block > div > p:last-child { margin-bottom: 0; }
 blockquote > p { margin-bottom: 0.5em; }
+
+/* "Open in Tine / Logseq" links: only for local viewing (goddinpotty's default.css also hides these) */
+.local { display: none; }

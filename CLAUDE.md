@@ -16,7 +16,7 @@ lein blyg push                   # commit + push only that dir
 lein blyg mention                # webmentions for stubs now live
 lein blyg preview                # #blyg items → target/blyg-preview.html (reads the db only)
 lein site parity [--db x --rebuild]  # published pages vs goddinpotty's output; `lein site why <page>`
-lein site build [--out dir]      # render the site (default target/site; refuses the live site dir)
+lein site build [--out dir]      # sync the db, render the site (default :build-dir; refuses goddinpotty's live dir)
 lein site parity --html          # built pages vs goddinpotty's, plus a hidden-block leak check
 ```
 
@@ -60,4 +60,6 @@ test/resources/graph — fixture graph covering parser edge cases
 
 - Every page URI goes through `ingest/page-key`; never build one by hand.
 - Watcher tests copy the fixture graph to a temp dir.
-   lein watch --write` actions (through graph_write.clj), and `lein blyg publish`'s  state files in the ammdi repo (`.thirdmind-blyg-state.edn`, `.thirdmind-ids.edn`), as  goddinpotty keeps `.blyg-state.edn` there.
+- The real graph is read-only except for `lein watch --write` actions (through graph_write.clj),
+  and `lein blyg publish`'s state files in the ammdi repo (`.thirdmind-blyg-state.edn`,
+  `.thirdmind-ids.edn`), as goddinpotty keeps `.blyg-state.edn` there.

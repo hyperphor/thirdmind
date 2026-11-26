@@ -28,7 +28,9 @@
    "journals/2024_01_02.md" "- a post about [[Blygged]] #blyg\n\t- its child links [[Blyg child]]\n\t- and [[Blyg secret]]\n\t\t- #Private"
    "pages/Blygged.md"      "- linked from a journal #blyg item"
    "pages/Blyg child.md"   "- linked from that item's child"
-   "pages/Blyg secret.md"  "- linked only from a private child of the item"})
+   "pages/Blyg secret.md"  "- linked only from a private child of the item"
+   "pages/Open.md"         "public:: true\n\n- unlinked, but public:: true, and it links [[Via open]]"
+   "pages/Via open.md"     "- reached from a public:: page"})
 
 (defn- graph-fixture [f]
   (let [dir  (.toFile (java.nio.file.Files/createTempDirectory "site-include" (make-array java.nio.file.attribute.FileAttribute 0)))
@@ -61,6 +63,7 @@
         "private pages, their namespace children, journal-only and stub-joined pages stay out")
     (is (not (ps "orphan stub")) "stubs aren't walked or published")
     (is (ps "plural") "aliases:: works like alias::")
+    (is (every? ps ["open" "via open"]) "public:: true pages start the walk")
     (is (= 4 (count (filter #(.contains ^String % "/block/linked") hidden))) "private blocks and children are hidden")
     (is (some #(.contains ^String % "/block/heading") hidden) "a bullet indented under heading text nests under it")))
 
@@ -88,6 +91,10 @@
       (is (= 1 (count (re-seq #"the <strong>answer</strong>" asked))) "shown once, in the popup"))
     (is (re-find #"myGrid" (page "Index")))
     (is (re-find #"thirdmindFullMap" (page "Map")))
+    (let [o (render/outputs (assoc ctx :page-suffix ".html" :navbar [["All Pages" "Index"]]))]
+      (is (contains? o "Home.html") ":page-suffix names page files")
+      (is (contains? o "All-Pages.html") "the Index page, not Index.html (index.html on a case-insensitive disk)")
+      (is (re-find #"href=\"All-Pages\"" (o "Home.html")) "a navbar link to Index follows it"))
     (is (re-find #"thirdmindPageMap\('#pagemap', \"Linked\"\)" (page "Linked")))
     (let [{:keys [nodes nbrs]} (clojure.data.json/read-str (page "graphs/map.json") :key-fn keyword)
           links (set (map :link nodes))]

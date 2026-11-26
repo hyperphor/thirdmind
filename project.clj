@@ -16,7 +16,8 @@
                  [com.anthropic/anthropic-java "3.3.0"]]
   :source-paths ["src/clj"]
   :test-paths ["test/clj"]
-  :resource-paths ["resources" "test/resources"]
+  :resource-paths ["resources"]
+  :profiles {:test {:resource-paths ["test/resources"]}}
   :main ^:skip-aot hyperphor.thirdmind.core
   :aliases {"search" ["run" "-m" "hyperphor.thirdmind.search"]
             "watch"  ["run" "-m" "hyperphor.thirdmind.watch"]

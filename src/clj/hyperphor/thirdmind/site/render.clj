@@ -256,6 +256,12 @@
 
 (defn- first-image [html] (second (re-find #"<img src=\"([^\"]+)\"" html)))
 
+(defn- index-slug
+  "The generated Index page's slug: All-Pages with a :page-suffix, as Index.html would be index.html
+  on a case-insensitive disk."
+  [ctx]
+  (if (:page-suffix ctx) "All-Pages" "Index"))
+
 (defn- layout
   "goddinpotty's page frame (templating/page-hiccup) around contents."
   [ctx {:keys [title title-html slug contents widgets head-extra]}]
@@ -273,7 +279,7 @@
       [:meta {:name "og:title" :content title}]
       [:meta {:name "og:description" :content (or (:description ctx) title)}]
       (when image [:meta {:name "og:image" :content image}])
-      [:title (str (:short-title ctx) ": " title)]
+      [:title (if-let [s (:short-title ctx)] (str s ": " title) title)]
       [:link {:rel "stylesheet" :href "https://cdn.jsdelivr.net/npm/bootstrap@5.1.1/dist/css/bootstrap.min.css"
               :integrity "sha384-F3w7mX95PdgyTmZZMECAngseQB83DfGTowi0iMjiWaeVhAn4FJkqJByhZMI3AhiU" :crossorigin "anonymous"}]
       [:link {:rel "stylesheet" :href "assets/default.css"}]
@@ -292,9 +298,9 @@
        [:div.container.navbar-x
         [:a.pagelink.navbar-brand {:href (c/slug (:main-page ctx))} (:main-page ctx)]
         [:ul.navbar-nav.ml-auto
-         [:li.nav-item [:a.pagelink.nav-link {:href "blyg/"} "Blyg"]]
+         (when (:blyg? ctx) [:li.nav-item [:a.pagelink.nav-link {:href "blyg/"} "Blyg"]])
          (for [[label target] (:navbar ctx)]
-           [:li.nav-item [:a.pagelink.nav-link {:href (c/slug target)} label]])]]]
+           [:li.nav-item [:a.pagelink.nav-link {:href (if (= target "Index") (index-slug ctx) (c/slug target))} label]])]]]
       [:div.container.main
        [:div.row
         (into [:div.col-md-3.sidebar] (remove nil? widgets))
@@ -377,7 +383,7 @@
 
 (defn- index-page [ctx]
   (str (h/html
-        (layout ctx {:title "Index" :title-html "Index" :slug "Index"
+        (layout ctx {:title "Index" :title-html "Index" :slug (index-slug ctx)
                      :contents [:div#myGrid {:style "height:800px;"}]
                      :head-extra (list [:script {:src "https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"}]
                                        [:script {:src "assets/grid.js"}])
@@ -432,14 +438,15 @@
          (str/trim p))))
 
 (defn outputs
-  "{path html} for the whole site, less copied files."
-  [ctx]
+  "{path html} for the whole site, less copied files. Page files get :page-suffix (eg \".html\"); links don't."
+  [{sfx :page-suffix :as ctx}]
   (into {"index.html" (index-html ctx) "assets/index.js" (search-index ctx)
          "graphs/map.json" (map-data ctx) "assets/map.js" (slurp (io/resource "site/map.js"))
          "assets/thirdmind-site.css" (slurp (io/resource "site/thirdmind-site.css"))}
-        (concat (for [[p slug] (:slugs ctx)] [slug (page-html ctx p)])
-                ;; a graph page named Index or Map would be overwritten: the generated one wins
-                [["Index" (index-page ctx)] ["Map" (map-page ctx)]])))
+        (for [[path html] (concat (for [[p slug] (:slugs ctx)] [slug (page-html ctx p)])
+                                  ;; a graph page named Index or Map would be overwritten: the generated one wins
+                                  [[(index-slug ctx) (index-page ctx)] ["Map" (map-page ctx)]])]
+          [(str path sfx) html])))
 
 (def manifest-name ".thirdmind-site.edn")
 
@@ -474,7 +481,9 @@
         now     (set (concat (keys files) (map first statics) (map first images)))
         written (count (filter identity (for [[p s] files] (write-if-changed! (io/file outd p) s))))
         copied  (count (filter identity (for [[p f] (concat statics images)] (copy-if-changed! f (io/file outd p)))))
-        gone    (remove now before)]
+        ;; on a case-insensitive disk, deleting Index.html would delete index.html
+        lower   (set (map str/lower-case now))
+        gone    (remove #(or (now %) (lower (str/lower-case %))) before)]
     (doseq [p gone] (io/delete-file (io/file outd p) true))
     (spit mf (pr-str (vec (sort now))))
     {:pages (count (:slugs ctx)) :written written :copied copied :deleted (count gone)}))

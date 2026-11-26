@@ -1,29 +1,216 @@
 # ThirdMind
 
-A side process and knowledge store for a Logseq (or any markdown-outline) graph. Logseq
-stays the UI; ThirdMind keeps its own database of the graph in [Tunamelt](../tunamelt),
-watches for changes, and responds to tags (`#AskClaude`, `#Goal`, …).
-Spec: `design/knowos-via-logseq.md`.
+ThirdMind runs beside a [Logseq](https://logseq.com) graph (or any folder of Logseq-style
+markdown outlines). It keeps its own database of the graph in
+[Tunamelt](https://github.com/hyperphor/tunamelt) and keeps it in sync as you edit. On that
+database it can:
 
-Current state: builds the database from a graph, keeps it in sync as files change, and
-logs newly tagged `#blyg` blocks as a first tag handler.
+- publish the graph, or the parts of it you mark public, as a static website;
+- publish blocks tagged `#blyg` to a [blyg](design/blygger.md) (a microblog of fragments, with
+  an RSS feed and webmentions);
+- answer questions you tag `#AskClaude`, writing Claude's answer back into the graph;
+- turn bare URLs you type into `[title](url)` links;
+- serve a local browser view of the graph.
+
+Logseq, or another editor, stays the place you write. ThirdMind only reads the graph, except
+for the two write-back actions above, which are off unless you turn them on.
+
+Status: working and in daily use on one large graph (about 5000 pages), but young. Expect
+rough edges, and read [Limits](#limits) before relying on it.
+
+## Requirements
+
+- Java 21 or later
+- [Leiningen](https://leiningen.org)
+- A Logseq graph in markdown: a folder with `pages/` and `journals/`
+
+Clone this repository and run everything from its top directory. Dependencies, Tunamelt
+included, come from Clojars on first run.
+
+## Publish a graph as a website
+
+1. Copy the example config and edit it:
+
+   ```bash
+   cp config/examples/site.edn config/mysite.edn
+   ```
+
+   At minimum set `:graph` to your graph's folder and `:site :main-page` to the page that
+   should be the front page. The [configuration](#configuration) section lists every setting.
+
+2. Build:
+
+   ```bash
+   lein site build
+   ```
+
+   The first run reads the whole graph into a database (`<graph folder name>.db` in the current
+   directory), which takes a few seconds for a small graph and under a minute for a large
+   one. Later runs re-read only the files that changed, then rewrite only the pages whose HTML
+   changed. The site goes to `:build-dir` (default `target/site`).
+
+3. Copy the build directory to your web host. If the host is GitHub Pages, Netlify or
+   Cloudflare Pages, set `:page-suffix ".html"` (see [Page files](#page-files)).
+
+Commands look for the config in this order: a path given as the first argument
+(`lein site build config/mysite.edn`), then `$THIRDMIND_CONFIG`, then the only `.edn` file
+directly inside `config/`. Files in `config/examples/` don't count.
+
+### What gets published
+
+Nothing is published unless something leads to it. ThirdMind starts from these pages:
+
+- the main page, and any pages in `:entry-pages`;
+- pages with the property `public:: true`;
+- pages tagged with one of `:entry-tags` (default `#EntryPoint`);
+- blocks tagged `#blyg` (and `#blyg-pin`, `#blyg-reply`, `#blyg-response`), with their children.
+
+From there it follows links, in both directions (links out of a page, and pages that link
+in), and namespace parents (`a/b` reaches `a`). It stops at:
+
+- journal pages, which are never published;
+- anything carrying an **exit tag** (`:exit-tags`, default `["Private"]`). A block tagged
+  `#Private`, or with a `#Private` child, is left out along with everything under it. An exit
+  tag in a top-level block hides the whole page, and hiding `foo` also hides `foo/bar`.
+
+So `#Private` is the way to keep something off the site. Check before you publish:
 
 ```bash
-lein run /opt/mt/repos/ammdi            # writes ammdi.db (realm "ammdi") from scratch, reports on it
-lein run <graph-dir> [db-path]
-lein watch /opt/mt/repos/ammdi [db-path]   # side process: keep the db in sync, run tag handlers
-lein search heidegger [db-path] [--snippets] [--raw]   # pages matching via Tunamelt full-text search
+lein site published --list          # every page that would be published
+lein site why "Some Page"           # whether it's published, and the chain of links that reached it
 ```
 
-## Data model
+Links to unpublished pages render as plain text, and blocks hidden by an exit tag are left
+out of every page, including other pages' "Incoming links".
 
-Pages and blocks are Tunamelt objects; relations are attributes holding URIs.
+### Page files
+
+Each page is written as a file named after the page (`Computer Power and Human Reason` becomes
+`Computer-Power-and-Human-Reason`), and links between pages use those names with no
+extension. The server must send these files as `text/html`, which most static hosts won't
+do for a file with no extension. With `:page-suffix ".html"` the files get an `.html`
+suffix and the links stay the same, which suits hosts that serve `/Foo` from `Foo.html`
+(GitHub Pages, Netlify, Cloudflare Pages). In that mode the generated index of all pages is
+`All-Pages.html` instead of `Index`.
+
+`index.html` redirects to the main page. Two more pages are generated: `Index`, a sortable
+table of all pages, and `Map`, a graph of the whole site.
+
+### Styling and search
+
+The page markup comes from [goddinpotty](https://github.com/mtravers/goddinpotty), the
+generator ThirdMind is replacing, and so do its stylesheet and search scripts:
+`default.css`, `hyper-roam.css`, `search.js`, `elasticlunr.min.js` and `grid.js`, from
+goddinpotty's `resources/public/`. Point `:static-dir` at a folder holding them and the build
+copies them into `assets/`. Without them, pages render with Bootstrap's defaults: readable,
+but the navigation bar is hard to see, the search box does nothing and the Index table is
+empty. The search index itself (`assets/index.js`) and the maps are built either way.
+
+Add your own stylesheets with `:site-css`.
+
+## Configuration
+
+A config is an EDN file. All paths are absolute or relative to the directory you run `lein`
+in.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `:graph` | required | The graph folder (holds `pages/` and `journals/`) |
+| `:db` | `<realm>.db` | The database file. A second file, `<db>.ids.db`, sits beside it |
+| `:realm` | graph folder name | Name used inside the database and in page URIs |
+| `:port` | 8080 | Port for `lein serve` |
+| `:write?` | false | Let `lein watch` edit the graph: smart URLs and `#AskClaude` |
+| `:site` | | Static site settings, below |
+| `:blygger` | | Blyg settings, below |
+
+`:site`:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `:main-page` | required | Front page; first in the navbar |
+| `:build-dir` | `:output-dir`, else `target/site` | Where `lein site build` writes (`--out dir` overrides) |
+| `:base-url` | | The site's public URL, for `og:url` tags |
+| `:exit-tags` | `["Private"]` | Tags that keep a block, its children, or a page off the site |
+| `:entry-tags` | `["EntryPoint"]` | Pages tagged with one of these are published |
+| `:entry-pages` | | More pages to publish and to put in the navbar |
+| `:entry-block-tags` | the blyg tags | Blocks with these tags start the walk |
+| `:page-suffix` | none | Suffix for page files, eg `".html"` |
+| `:navbar` | | `[[label page-name] ...]` links in the navbar |
+| `:short-title` | | Prefix for each page's `<title>` |
+| `:description` | page title | `og:description` |
+| `:colophon` | | Footer contents, as [hiccup](https://github.com/weavejester/hiccup) |
+| `:site-css` | | Extra stylesheet URLs, linked after the built-in ones |
+| `:static-dir` | | Files to copy into `assets/` (see [Styling and search](#styling-and-search)) |
+| `:google-analytics` | | A Google Analytics id |
+| `:blyg?` | true when `:blygger` is set | Show a "Blyg" link in the navbar |
+| `:goddinpotty` | | A goddinpotty config to take `:exit-tags`, `:main-page`, `:base-url` and `:output-dir` from. Only for migrating from goddinpotty |
+
+`config/ammdi.edn` is the config for the graph ThirdMind was built for, with every section
+filled in.
+
+## Other commands
+
+```bash
+lein watch                  # keep the db in sync with the graph; Ctrl-C to stop
+lein serve                  # browse the graph at http://localhost:<port>
+lein search heidegger       # full-text search over the config's db
+lein run <graph-dir> [db]   # rebuild a db from scratch and print a report
+```
+
+`watch` and `serve` take the config as `lein site` does, or a graph folder and db path
+instead. `search` takes an optional db path.
+
+### `lein watch`
+
+Polls `pages/` and `journals/` every 2 seconds and re-reads each changed file. It waits until
+a file has been still for one interval, since editors save while you type. On start it
+catches up on whatever changed while it was stopped. A typical file syncs in well under a
+second.
+
+With `:write? true` (or `--write`) it also edits the graph:
+
+- **Smart URLs.** A bare URL you've just typed becomes `[page title](url)`.
+- **`#AskClaude`.** End a block with `#AskClaude` and ThirdMind sends that block's outline to
+  Claude and nests the answer beneath it; `#AskClaudePage` sends the whole page. It needs
+  `ANTHROPIC_API_KEY` in the environment, or falls back to the key in the logseq-claude
+  plugin's settings (`~/.logseq/settings/logseq-claude.json`). `THIRDMIND_CLAUDE_MODEL` picks the model.
+
+Writes wait until the file has been quiet for a few seconds, find their block again by
+content, and replace the file atomically, so an edit you make in the meantime isn't lost.
+Keep the graph under version control anyway.
+
+`lein site build` syncs the database itself, so it doesn't need `lein watch` running.
+
+### Blyg
+
+`lein blyg publish` turns `#blyg` blocks into a blyg (protocol 0.3): JSON entries, archive and
+permalink pages and a feed, in a directory of a site repository. `lein blyg push` commits and
+pushes only that directory, and `lein blyg mention` sends webmentions for replies. With
+`:auto-publish? true`, `lein watch` publishes and pushes once `#blyg` edits have been still for
+`:quiet-ms`. The `:blygger` section of `config/ammdi.edn` shows the settings, and
+[design/blygger.md](design/blygger.md) describes the format. The blyg still takes its site URL
+and exit tags from a goddinpotty config; it hasn't been separated from goddinpotty yet.
+
+## Limits
+
+- Only `.md` files directly inside `pages/` and `journals/` are read: no subfolders, no
+  `.org`.
+- Two files whose pages have the same name overwrite each other's blocks.
+- Changing an `alias::` doesn't re-resolve links in other pages until those files change.
+- A block reference to a block in a file that hasn't been synced yet is dropped.
+- The site is rebuilt by running `lein site build`; the watcher doesn't rebuild it yet.
+
+## How it works
+
+### Data model
+
+Pages, blocks and files are Tunamelt objects; relations are attributes holding URIs.
 
 | type | uri | attributes |
 |---|---|---|
-| page | `hyperphor://<realm>/page/<encoded lowercase name>` | `:name :file :journal :journal-day :blocks :tags :alias :prop/*`; `:stub true` for pages only referenced |
+| page | `hyperphor://<realm>/page/<encoded lowercase name>` | `:name :file :journal :journal-day :blocks :tags :alias :prop/*`; `:stub true` for pages that are only referenced |
 | block | `hyperphor://<realm>/block/<id:: or page~outline.path>` | `:content :page :parent :order :depth :refs :tags :block-refs :marker :prop/*` |
-| file | `hyperphor://<realm>/file/<encoded rel path>` | `:path :mtime :size :page` — what the watcher last ingested |
+| file | `hyperphor://<realm>/file/<encoded rel path>` | `:path :mtime :size :page`, as the watcher last read them |
 
 ```clojure
 (t/find "block" {:attrs {:tags page-uri}})          ; blocks tagged #foo
@@ -32,33 +219,43 @@ Pages and blocks are Tunamelt objects; relations are attributes holding URIs.
 (core/outline page-uri)                            ; outline rebuilt from :parent/:order
 ```
 
-## Watcher
+Blocks without an `id::` get ids from their position. A separate store (`<db>.ids.db`) gives
+each block a stable ThirdMind id, matched by content when a file changes, which the blyg uses
+to recognise an edited post.
 
-`lein watch` polls `pages/` and `journals/` every 2s, comparing each file's mtime and size
-with the db's file records. It skips files modified within the last interval (Logseq
-saves while you type). It re-ingests each changed file on its own, with aliases and block
-ids resolved against the db, and removes the pages of deleted files. A deleted page that's
-still referenced reverts to a stub. On start it catches up on changes made while it was
-stopped. A db with no file records (new, or built before the watcher existed) is rebuilt from scratch,
-which takes about 45s for ammdi. After that, a typical file syncs in about 0.1–0.4s.
+### Tag handlers
 
-Tag handlers (`watch/default-handlers`, tag name → fn of the block) run when a block
-newly carries the tag: a tagged block counts as new unless a tagged block on that page
-before the change had the same uri or content. Inserting blocks above it, which renumbers
-position-based ids, doesn't re-fire it. Editing a tagged block's text does. Handlers
-don't fire during a full rebuild.
+Tag handlers (`watch/default-handlers`, tag name → fn of the block) run when a block newly
+carries a tag: a tagged block counts as new unless a tagged block on that page had the same
+uri or content before the change. Inserting blocks above it, which renumbers position-based
+ids, doesn't fire it again. Editing a tagged block's text does. Handlers don't run during a
+full rebuild.
 
-Known limits:
-- Two files whose pages share a name overwrite each other's blocks.
-- Changing an `alias::` doesn't re-resolve refs in other pages until those files change.
-- Block refs to blocks in a file not yet synced are dropped.
+### Parsing
 
-## Parsing notes
+- Legacy file names: `%XX` is decoded and `title::` overrides the file name. Journals
+  (`yyyy_MM_dd.md`) are named as Logseq names them by default, `Jul 5th, 2013`.
+- Page links are case-insensitive and resolve through `alias::`.
+- Links inside fenced or inline code are ignored; `- ` lines inside a code fence are content,
+  not blocks.
 
-- Legacy file names: `%XX` decoded; `title::` overrides. Journals (`yyyy_MM_dd.md`) are
-  named like Logseq's default, `Jul 5th, 2013`.
-- Page refs are case-insensitive and resolve through `alias::`.
-- Refs inside fenced/inline code are ignored; fenced `- ` lines are content, not blocks.
-- Blocks without `id::` get position-based ids, so `lein run` rebuilds the database fresh and
-  the watcher replaces a changed file's blocks wholesale.
-- Only `.md` directly under `pages/` and `journals/` is read (no subdirectories, no `.org`).
+## Development
+
+```bash
+lein test
+```
+
+Tests use the fixture graph in `test/resources/graph` and temporary copies of it, never a
+real graph. To work on Tunamelt at the same time, clone it beside this repository and link
+it as a Leiningen checkout:
+
+```bash
+mkdir -p checkouts && ln -s ../../tunamelt checkouts/tunamelt
+```
+
+`design/` holds design notes and plans; `design/knowos-via-logseq.md` is the original spec and
+`design/static-site.md` the site generator's.
+
+## License
+
+Apache 2.0; see [LICENSE.md](LICENSE.md).
