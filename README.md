@@ -13,7 +13,7 @@ database it can:
 - serve a local browser view of the graph.
 
 Logseq, or another editor, stays the place you write. ThirdMind only reads the graph, except
-for the two write-back actions above, which are off unless you turn them on.
+for `#AskClaude` answers and smart URLs, which are off unless you turn them on.
 
 Status: working and in daily use on one large graph (about 5000 pages), but young. Expect
 rough edges, and read [Limits](#limits) before relying on it.
@@ -35,8 +35,13 @@ included, come from Clojars on first run.
    cp config/examples/site.edn config/mysite.edn
    ```
 
-   At minimum set `:graph` to your graph's folder and `:site :main-page` to the page that
-   should be the front page. The [configuration](#configuration) section lists every setting.
+   At minimum set `:graph` to your graph's folder, and `:main-page` inside the `:site` map to
+   the page that should be the front page. The [configuration](#configuration) section lists
+   every setting.
+
+   For the site's stylesheet, search box and page index you also need five files from
+   goddinpotty; see [Styling and search](#styling-and-search). The site builds without them,
+   but looks unfinished.
 
 2. Build:
 
@@ -52,6 +57,10 @@ included, come from Clojars on first run.
 3. Copy the build directory to your web host. If the host is GitHub Pages, Netlify or
    Cloudflare Pages, set `:page-suffix ".html"` (see [Page files](#page-files)).
 
+   To look at the site locally, set `:page-suffix ".html"` and use a static server that serves
+   `/Foo` from `Foo.html`, such as `npx serve target/site`. (`lein serve` is a different thing:
+   a live view of the whole graph, not the built site.)
+
 Commands look for the config in this order: a path given as the first argument
 (`lein site build config/mysite.edn`), then `$THIRDMIND_CONFIG`, then the only `.edn` file
 directly inside `config/`. Files in `config/examples/` don't count.
@@ -63,7 +72,8 @@ Nothing is published unless something leads to it. ThirdMind starts from these p
 - the main page, and any pages in `:entry-pages`;
 - pages with the property `public:: true`;
 - pages tagged with one of `:entry-tags` (default `#EntryPoint`);
-- blocks tagged `#blyg` (and `#blyg-pin`, `#blyg-reply`, `#blyg-response`), with their children.
+- blocks tagged `#blyg`, `#blyg-pin`, `#blyg-reply` or `#blyg-response` (the [blyg](#blyg)
+  tags; `:entry-block-tags` changes the list), with their children.
 
 From there it follows links, in both directions (links out of a page, and pages that link
 in), and namespace parents (`a/b` reaches `a`). It stops at:
@@ -73,7 +83,9 @@ in), and namespace parents (`a/b` reaches `a`). It stops at:
   `#Private`, or with a `#Private` child, is left out along with everything under it. An exit
   tag in a top-level block hides the whole page, and hiding `foo` also hides `foo/bar`.
 
-So `#Private` is the way to keep something off the site. Check before you publish:
+With the default exit tags, `#Private` is how you keep something off the site. Because links
+are followed in both directions, a page is published if any published page links to it, or if
+it links to a published page. Check before you publish:
 
 ```bash
 lein site published --list          # every page that would be published
@@ -81,7 +93,7 @@ lein site why "Some Page"           # whether it's published, and the chain of l
 ```
 
 Links to unpublished pages render as plain text, and blocks hidden by an exit tag are left
-out of every page, including other pages' "Incoming links".
+out of every page, including the "Incoming links" list in each page's sidebar.
 
 ### Page files
 
@@ -90,23 +102,28 @@ Each page is written as a file named after the page (`Computer Power and Human R
 extension. The server must send these files as `text/html`, which most static hosts won't
 do for a file with no extension. With `:page-suffix ".html"` the files get an `.html`
 suffix and the links stay the same, which suits hosts that serve `/Foo` from `Foo.html`
-(GitHub Pages, Netlify, Cloudflare Pages). In that mode the generated index of all pages is
-`All-Pages.html` instead of `Index`.
+(GitHub Pages, Netlify, Cloudflare Pages).
 
-`index.html` redirects to the main page. Two more pages are generated: `Index`, a sortable
-table of all pages, and `Map`, a graph of the whole site.
+Besides the graph's pages, the build writes `index.html`, which redirects to the main page,
+and two generated pages: `Index`, a sortable table of all pages, and `Map`, a graph of the
+whole site. With `:page-suffix ".html"` the Index page is written as `All-Pages.html`, since
+`Index.html` and `index.html` are the same file on a case-insensitive disk; a `:navbar` entry
+naming `"Index"` links to it either way.
 
 ### Styling and search
 
-The page markup comes from [goddinpotty](https://github.com/mtravers/goddinpotty), the
-generator ThirdMind is replacing, and so do its stylesheet and search scripts:
-`default.css`, `hyper-roam.css`, `search.js`, `elasticlunr.min.js` and `grid.js`, from
-goddinpotty's `resources/public/`. Point `:static-dir` at a folder holding them and the build
-copies them into `assets/`. Without them, pages render with Bootstrap's defaults: readable,
+ThirdMind's page markup is that of [goddinpotty](https://github.com/mtravers/goddinpotty), an
+older static site generator for Logseq graphs, and it uses goddinpotty's stylesheet and search
+scripts, which aren't yet bundled here. Get `default.css`, `hyper-roam.css`, `search.js`,
+`elasticlunr.min.js` and `grid.js` from goddinpotty's
+[`resources/public/`](https://github.com/mtravers/goddinpotty/tree/master/resources/public)
+folder, put them in a folder of your own, and point `:static-dir` at it; the build copies that
+folder's files into `assets/`. Add `"assets/hyper-roam.css"` to `:site-css` as well. Without them, pages render with Bootstrap's defaults: readable,
 but the navigation bar is hard to see, the search box does nothing and the Index table is
 empty. The search index itself (`assets/index.js`) and the maps are built either way.
 
-Add your own stylesheets with `:site-css`.
+Add your own stylesheets the same way: put the file in `:static-dir` and list it in `:site-css`
+as `"assets/<name>.css"`.
 
 ## Configuration
 
@@ -129,11 +146,12 @@ in.
 |---|---|---|
 | `:main-page` | required | Front page; first in the navbar |
 | `:build-dir` | `:output-dir`, else `target/site` | Where `lein site build` writes (`--out dir` overrides) |
+| `:output-dir` | | The live site's directory, if you build somewhere else first |
 | `:base-url` | | The site's public URL, for `og:url` tags |
 | `:exit-tags` | `["Private"]` | Tags that keep a block, its children, or a page off the site |
 | `:entry-tags` | `["EntryPoint"]` | Pages tagged with one of these are published |
 | `:entry-pages` | | More pages to publish and to put in the navbar |
-| `:entry-block-tags` | the blyg tags | Blocks with these tags start the walk |
+| `:entry-block-tags` | `["blyg" "blyg-pin" "blyg-reply" "blyg-response"]` | Blocks with these tags start the walk |
 | `:page-suffix` | none | Suffix for page files, eg `".html"` |
 | `:navbar` | | `[[label page-name] ...]` links in the navbar |
 | `:short-title` | | Prefix for each page's `<title>` |
@@ -142,7 +160,7 @@ in.
 | `:site-css` | | Extra stylesheet URLs, linked after the built-in ones |
 | `:static-dir` | | Files to copy into `assets/` (see [Styling and search](#styling-and-search)) |
 | `:google-analytics` | | A Google Analytics id |
-| `:blyg?` | true when `:blygger` is set | Show a "Blyg" link in the navbar |
+| `:blyg?` | true when `:blygger` is set | Show a "Blyg" link (to `blyg/`) in the navbar |
 | `:goddinpotty` | | A goddinpotty config to take `:exit-tags`, `:main-page`, `:base-url` and `:output-dir` from. Only for migrating from goddinpotty |
 
 `config/ammdi.edn` is the config for the graph ThirdMind was built for, with every section
@@ -188,8 +206,12 @@ permalink pages and a feed, in a directory of a site repository. `lein blyg push
 pushes only that directory, and `lein blyg mention` sends webmentions for replies. With
 `:auto-publish? true`, `lein watch` publishes and pushes once `#blyg` edits have been still for
 `:quiet-ms`. The `:blygger` section of `config/ammdi.edn` shows the settings, and
-[design/blygger.md](design/blygger.md) describes the format. The blyg still takes its site URL
-and exit tags from a goddinpotty config; it hasn't been separated from goddinpotty yet.
+[design/blygger.md](design/blygger.md) describes the format.
+
+`lein blyg` needs a goddinpotty config file (`:blygger :goddinpotty`), from which it reads the
+site URL and exit tags, and a goddinpotty-built site, from which it learns which pages are
+published. Until that changes it is only usable alongside goddinpotty, so its settings aren't
+documented here.
 
 ## Limits
 
@@ -198,7 +220,7 @@ and exit tags from a goddinpotty config; it hasn't been separated from goddinpot
 - Two files whose pages have the same name overwrite each other's blocks.
 - Changing an `alias::` doesn't re-resolve links in other pages until those files change.
 - A block reference to a block in a file that hasn't been synced yet is dropped.
-- The site is rebuilt by running `lein site build`; the watcher doesn't rebuild it yet.
+- The watcher doesn't rebuild the site; run `lein site build` for that.
 
 ## How it works
 
