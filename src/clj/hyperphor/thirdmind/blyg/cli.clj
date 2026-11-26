@@ -166,6 +166,15 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
     (when-not (zero? exit) (throw (ex-info (str "git " (str/join " " args) " failed: " err) {:exit exit})))
     out))
 
+(defn- push-branch
+  "The branch on remote to push HEAD to: its upstream's, if that's on remote, else the current branch's
+  name (as push.default=current would), whatever push.default says."
+  [repo remote]
+  (let [up (try (str/trim (git repo "rev-parse" "--abbrev-ref" "--symbolic-full-name" "@{u}")) (catch Exception _ nil))]
+    (if (and up (str/starts-with? up (str remote "/")))
+      (subs up (inc (count remote)))
+      (str/trim (git repo "rev-parse" "--abbrev-ref" "HEAD")))))
+
 (defn push!
   "Commit and push only path (eg ammdi/blyg) in repo, to remote. Anything else in the repo,
   staged or not, is left alone. Returns :pushed or :unchanged."
@@ -174,7 +183,7 @@ details.ask-claude>summary{cursor:pointer} ul.claude{border-left:3px solid #c9b8
   (if (str/blank? (git repo "diff" "--cached" "--name-only" "--" path))
     :unchanged
     (do (git repo "commit" "-q" "-m" (str "Blyg publish " (java.time.LocalDate/now)) "--" path)
-        (git repo "push" "-q" remote)
+        (git repo "push" "-q" remote (str "HEAD:refs/heads/" (push-branch repo remote)))
         :pushed)))
 
 (defn- content-ctx
