@@ -7,7 +7,7 @@ database it can:
 
 - publish the graph, or the parts of it you mark public, as a static website;
 - publish blocks tagged `#blyg` to a [blyg](design/blygger.md) (a microblog of fragments, with
-  an RSS feed and webmentions);
+  an RSS feed and webmentions); for now this needs goddinpotty as well (see [Blyg](#blyg));
 - answer questions you tag `#AskClaude`, writing Claude's answer back into the graph;
 - turn bare URLs you type into `[title](url)` links;
 - serve a local browser view of the graph.
@@ -85,7 +85,7 @@ in), and namespace parents (`a/b` reaches `a`). It stops at:
 
 With the default exit tags, `#Private` is how you keep something off the site. Because links
 are followed in both directions, a page is published if any published page links to it, or if
-it links to a published page. Check before you publish:
+it links to a published page. Check before you upload the site:
 
 ```bash
 lein site published --list          # every page that would be published
@@ -119,7 +119,9 @@ scripts, which aren't yet bundled here. Get `default.css`, `hyper-roam.css`, `se
 `elasticlunr.min.js` and `grid.js` from goddinpotty's
 [`resources/public/`](https://github.com/mtravers/goddinpotty/tree/master/resources/public)
 folder, put them in a folder of your own, and point `:static-dir` at it; the build copies that
-folder's files into `assets/`. Add `"assets/hyper-roam.css"` to `:site-css` as well. Without them, pages render with Bootstrap's defaults: readable,
+folder's files into `assets/`. Pages always link `assets/default.css` and the two scripts;
+`hyper-roam.css` is optional styling, linked only if you add `"assets/hyper-roam.css"` to
+`:site-css`. Without them, pages render with Bootstrap's defaults: readable,
 but the navigation bar is hard to see, the search box does nothing and the Index table is
 empty. The search index itself (`assets/index.js`) and the maps are built either way.
 
