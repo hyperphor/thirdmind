@@ -17,6 +17,9 @@
   (is (empty? (su/bare-urls "[label](https://a.org) ![i](https://a.org/i.png) `https://a.org/c` <https://a.org/z>")))
   (is (empty? (su/bare-urls "{{video https://youtube.com/watch?v=1}} [[https://a.org/page]]")))
   (is (empty? (su/bare-urls "x?u=https://a.org/y")) "not embedded in another URL")
+  (is (empty? (su/bare-urls "<iframe style=\"b:1\" src=\"https://open.spotify.com/embed/x\" width=\"100%\"></iframe>"))
+      "not inside an HTML tag")
+  (is (= ["https://a.org/x"] (su/bare-urls "<b>see</b> https://a.org/x")))
   (is (= [[4 19 "https://a.org/x"]] (su/bare-url-spans "see https://a.org/x and [y](https://a.org/x)"))))
 
 (deftest url-titles
@@ -126,6 +129,33 @@
       (reset! calls [])
       (watch/sync! *cfg* known)
       (is (empty? @calls) "the wrapper doesn't trigger, and URLs in the answer are left bare"))))
+
+(deftest ask-claude-blank-children
+  (let [known (watch/init! *cfg*)]
+    (write! "pages/B.md" "- topic\n\t- what is it? #AskClaude\n\t\t-\n\t\t- \n- after\n")
+    (let [known (watch/sync! *cfg* known)]
+      (is (= :ask (ffirst @calls)) "empty bullets under the tag don't block it")
+      (is (= (str "- topic\n\t- what is it?\n"
+                  "\t\t- #AskClaude\n\t\t\t- Short answer.\n\t\t\t- point https://c.org/p\n\t\t\t\t- detail\n- after\n")
+             (read-page "pages/B.md"))
+          "the answer replaces them")
+      (reset! calls [])
+      (write! "pages/C.md" "- why? #AskClaude\n\t- my own note\n")
+      (watch/sync! *cfg* known)
+      (is (empty? @calls) "a real child still blocks it"))))
+
+(deftest ask-claude-thinking
+  (let [known (watch/init! *cfg*)
+        seen  (atom nil)
+        cfg   (assoc *cfg* :ask (fn [_] (reset! seen (read-page "pages/T.md")) "Done."))]
+    (write! "pages/T.md" "- why? #AskClaude\n- after\n")
+    (let [known (watch/sync! cfg known)]
+      (is (= "- why?\n\t- #AskClaude ⏳ Thinking…\n- after\n" @seen) "placeholder while asking")
+      (is (= "- why?\n\t- #AskClaude\n\t\t- Done.\n- after\n" (read-page "pages/T.md")))
+      (testing "an error replaces the placeholder"
+        (write! "pages/E.md" "- why? #AskClaude\n")
+        (watch/sync! (assoc *cfg* :ask (fn [_] (throw (ex-info "rate limited" {})))) known)
+        (is (= "- why?\n\t- #AskClaude ⚠️ rate limited\n" (read-page "pages/E.md")))))))
 
 (deftest ask-claude-page-action
   (let [known (watch/init! *cfg*)]

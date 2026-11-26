@@ -184,7 +184,7 @@
   "cfg with what write actions need, unless supplied: a serial worker, Claude, title fetching."
   [cfg]
   (merge {:actions default-actions :in-flight (atom #{}) :quiet-ms 8000 :log log
-          :ask claude/ask :fetch-title smart-url/fetch-title}
+          :ask #(claude/ask % log) :fetch-title smart-url/fetch-title}
          (when-not (:run cfg)
            (let [^ExecutorService ex (Executors/newSingleThreadExecutor)]
              {:run #(.submit ex ^Runnable %) :executor ex}))

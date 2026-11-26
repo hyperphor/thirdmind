@@ -7,8 +7,9 @@
 ;;; Bare URLs. One span finder serves both detection and replacement.
 
 (def ^:private masked-re
-  "Regions where a URL isn't bare: inline code, links and images, macros, <autolinks>, [[pages]]."
-  #"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|\{\{.*?\}\}|<[^>\s]*>|\[\[[^\]\n]*\]\]")
+  "Regions where a URL isn't bare: inline code, links and images, macros, <autolinks>, HTML tags
+  (eg an <iframe src=...>), [[pages]]."
+  #"`[^`\n]*`|!?\[[^\]\n]*\]\([^)\n]*\)|\{\{.*?\}\}|<[^>\s]*>|</?[A-Za-z][^>]*>|\[\[[^\]\n]*\]\]")
 
 (def ^:private url-re #"https?://[^\s<>\[\]{}\"`]+")
 

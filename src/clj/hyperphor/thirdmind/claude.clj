@@ -17,10 +17,12 @@
 
 (def default-model "claude-opus-5-5")
 
+(def request-timeout "Per API request; a long web-search round can take minutes." (java.time.Duration/ofMinutes 10))
+
 (def ^:private client
-  (delay (if (System/getenv "ANTHROPIC_API_KEY")
-           (AnthropicOkHttpClient/fromEnv)
-           (-> (AnthropicOkHttpClient/builder) (.apiKey ^String (plugin "apiKey")) (.build)))))
+  (delay (let [b (AnthropicOkHttpClient/builder)]
+           (if (System/getenv "ANTHROPIC_API_KEY") (.fromEnv b) (.apiKey b ^String (plugin "apiKey")))
+           (-> b (.timeout ^java.time.Duration request-timeout) (.maxRetries 1) (.build)))))
 
 (defn- web-access?
   "Server-side web_search / web_fetch on, unless the plugin's webAccess setting is false."
@@ -36,15 +38,21 @@
     (.create (.messages ^com.anthropic.client.AnthropicClient @client) ^MessageCreateParams (.build b))))
 
 (defn ask
-  "Send prompt to Claude (with web search/fetch); returns the answer text. Throws on refusal or an empty answer."
-  [^String prompt]
-  (let [model  (or (System/getenv "THIRDMIND_CLAUDE_MODEL") default-model)
+  "Send prompt to Claude (with web search/fetch); returns the answer text. Throws on refusal, an empty
+  answer, or a timeout. log, if given, gets a line per API round."
+  [^String prompt & [log]]
+  (let [log    (or log (fn [& _]))
+        model  (or (System/getenv "THIRDMIND_CLAUDE_MODEL") default-model)
         system (plugin "systemPrompt")
         user   (MessageParam/ofUser prompt)
         ;; A long server-tool round stops with pause_turn: send its content back to resume.
         ^Message msg (loop [msgs [user], n 0]
-                       (let [^Message m (create model system msgs)]
-                         (if (and (= StopReason/PAUSE_TURN (.orElse (.stopReason m) nil)) (< n 5))
+                       (let [t0 (System/currentTimeMillis)
+                             _  (log "Claude: round" (inc n) "sent")
+                             ^Message m (create model system msgs)
+                             stop (.orElse (.stopReason m) nil)]
+                         (log "Claude: round" (inc n) "done in" (quot (- (System/currentTimeMillis) t0) 1000) "s, stop:" (str stop))
+                         (if (and (= StopReason/PAUSE_TURN stop) (< n 5))
                            (recur (conj msgs (.toParam m)) (inc n))
                            m)))
         ;; The answer is the text after the last tool round; citations split it into adjacent blocks.

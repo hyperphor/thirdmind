@@ -30,10 +30,10 @@
 
 (defn triggers
   "[mode block-entry] for blocks in diff newly given a trigger tag, that aren't wrappers and have
-  no children yet."
+  no non-blank children yet."
   [realm {:keys [new] :as diff}]
   (let [by-uri  (into {} (for [[t m] modes] [(ingest/page-uri realm (ingest/page-key t)) m]))
-        parents (set (map (comp :parent :obj) new))]
+        parents (set (for [{:keys [obj]} new :when (not (str/blank? (:content obj)))] (:parent obj)))]
     (distinct
      (for [[t {:keys [uri obj] :as b}] (ingest/new-tags diff)
            :let [mode (by-uri t)]
@@ -125,20 +125,60 @@
   [indent unit answer]
   (block-lines (str indent unit) unit {:content (str "#" tag) :children (md->blocks answer)}))
 
+(defn- subtree
+  "Blocks under b (not b itself)."
+  [blocks b]
+  (filter #(under? (:path %) (:path b)) blocks))
+
+(defn- subtree-end
+  "Line index just past b's subtree (trailing blank lines excluded)."
+  [lines blocks b]
+  (let [last-b (or (last (subtree blocks b)) b)]
+    (gw/block-end lines blocks last-b)))
+
+(def thinking (str "#" tag " ⏳ Thinking…"))
+
+(defn- replace-under!
+  "Rewrite rel: under the block with content (tag stripped), if (ok? its subtree), put lines-for's
+  lines in place of the subtree. Returns true if written."
+  [cfg rel content ok? lines-for]
+  (gw/rewrite! cfg rel
+               (fn [{:keys [lines blocks]}]
+                 (when-let [b (or (gw/find-block blocks content) (gw/find-block blocks (strip-tag content)))]
+                   (when (and (:start b) (ok? (subtree blocks b)))
+                     (let [end (gw/block-end lines blocks b)
+                           ls  (reduce (fn [ls n] (update ls n strip-tag)) lines (:line-nos b))
+                           new (lines-for (gw/bullet-indent lines b) (gw/indent-unit lines))]
+                       (vec (concat (subvec ls 0 end) new (subvec (vec ls) (subtree-end lines blocks b))))))))))
+
+(defn- error-text
+  "e's message, with its root cause's when that differs (\"Request failed: timeout\")."
+  [^Throwable e]
+  (let [root (last (take-while some? (iterate #(.getCause ^Throwable %) e)))
+        msg  #(or (ex-message %) (.getSimpleName (class %)))]
+    (if (identical? root e) (msg e) (str (msg e) ": " (msg root)))))
+
+(defn- blank-only? [kids] (every? #(str/blank? (:content %)) kids))
+(defn- thinking-only? [kids] (and (= 1 (count kids)) (= thinking (:content (first kids)))))
+
 (defn answer!
-  "Ask about the block with content in file rel, and write the answer under it. Returns true if written."
+  "Ask about the block with content in file rel: show a Thinking placeholder under it, then replace
+  it with the answer. Returns true if the answer was written."
   [{:keys [ask log] :as cfg} rel mode content]
   (when-let [{:keys [name blocks]} (gw/snapshot cfg rel)]
     (if-let [b (some-> (gw/find-block blocks content) (#(when (:start %) %)))]
-      (let [answer  (ask (prompt mode name blocks b))
-            written (gw/rewrite! cfg rel
-                                 (fn [{:keys [lines blocks]}]
-                                   (when-let [b (gw/find-block blocks content)]
-                                     (when (and (:start b) (not (gw/children? blocks b)))
-                                       (let [end  (gw/block-end lines blocks b)
-                                             ls   (reduce (fn [ls n] (update ls n strip-tag)) lines (:line-nos b))
-                                             new  (answer-lines (gw/bullet-indent lines b) (gw/indent-unit lines) answer)]
-                                         (vec (concat (subvec ls 0 end) new (subvec ls end))))))))]
-        (when-not written (log "AskClaude: block changed, answer not written:" rel "\n" answer))
-        written)
+      (let [p (prompt mode name blocks b)]
+        ;; Blank children (stray empty bullets) are replaced too.
+        (if-not (replace-under! cfg rel content blank-only?
+                                (fn [indent unit] [(str indent unit "- " thinking)]))
+          (log "AskClaude: block changed, not asked:" rel)
+          (let [[answer err] (try [(ask p)] (catch Exception e [nil (error-text e)]))
+                written      (replace-under! cfg rel content thinking-only?
+                                             (fn [indent unit]
+                                               (if err
+                                                 [(str indent unit "- #" tag " ⚠️ " (first (str/split-lines (str err))))]
+                                                 (answer-lines indent unit answer))))]
+            (cond err          (log "AskClaude: ask failed:" rel err)
+                  (not written) (log "AskClaude: placeholder changed, answer not written:" rel "\n" answer))
+            (and written (not err)))))
       (log "AskClaude: block not found" rel))))
