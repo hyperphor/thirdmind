@@ -72,7 +72,9 @@
    :link-class "pagelink"
    :unlinked   #(str "<span class=\"empty\">" % "</span>")
    :tag-prefix ""
-   :tag-html   #(when (hover-tags (str/lower-case %)) (hover % (or popup "")))
+   ;; a placeholder, replaced after markdown rendering (see unhover): the popup is block-level HTML,
+   ;; which commonmark would break up inside a paragraph
+   :tag-html   #(when (hover-tags (str/lower-case %)) (str "\u0002" % "\u0003"))
    :sidenote   sidenote
    ;; a block ref shows its target only if the target is published
    :block      (fn [id] (let [u (ingest/block-uri realm id)] (when (shown? u) (:content (fetch u)))))
@@ -93,10 +95,14 @@
 
 (defn- site-html
   "Renderer output adjusted to goddinpotty's conventions: relative asset URLs, images opening
-  full size, external links in a new tab, cached tweets inline, one paragraph as a span."
+  full size, external links in a new tab, cached tweets inline, one paragraph as a span, anything
+  else in one div (li.block is a flex box, which would set several elements side by side)."
   [ctx html]
-  (let [html (str/trim html)
-        html (if-let [[_ inner] (re-matches #"(?s)<p>((?:(?!</?p>).)*)</p>" html)] (str "<span>" inner "</span>") html)]
+  (let [;; goddinpotty's css keeps whitespace in quotes, so newlines between tags would show
+        html (str/replace (str/trim html) #">\s*\n\s*<" "><")
+        html (if-let [[_ inner] (re-matches #"(?s)<p>((?:(?!</?p>).)*)</p>" html)]
+               (str "<span>" inner "</span>")
+               (str "<div>" html "</div>"))]
     (-> (embed-tweets (:tweets ctx {}) html)
         (str/replace #"(src|href)=\"/assets/" "$1=\"assets/")
         (str/replace #"<img src=\"(assets/[^\"]*)\"([^>]*)>" "<a class=\"imga\" href=\"$1\" target=\"_image\"><img src=\"$1\"$2></a>")
@@ -111,7 +117,7 @@
 (declare block-ul)
 
 (def ^:private hidden-props
-  #{"title" "original-title" "alias" "id" "created-at" "updated-at" "public" "collapsed" "heading"
+  #{"title" "original-title" "alias" "aliases" "id" "created-at" "updated-at" "public" "collapsed" "heading"
     "access-date" "library-catalog"})
 
 (defn- props-html
@@ -122,12 +128,19 @@
                (str "<li><b>" (r/escape (name k)) "</b>: "
                     (str/replace (site-html ctx (r/block-html rctx (str v))) #"^<span>(.*)</span>$" "$1") "</li>"))))
 
+(defn- unhover
+  "html with hover-tag placeholders (from render-ctx's :tag-html) replaced by lozenge and popup."
+  [html popup]
+  (str/replace html #"\u0002([^\u0003]*)\u0003" (fn [[_ tag]] (hover tag (or popup "")))))
+
 (defn- block-li [ctx kids {:keys [uri obj]} depth]
   (let [subs  (for [k (kids uri)] (block-ul ctx kids k (inc depth)))
-        popup (when (hover-block? obj) (str (h/html (seq subs))))
+        ;; the popup's css is white-space: pre-line, so newlines between tags would show
+        popup (when (hover-block? obj) (str/replace (str (h/html (seq subs))) #">\s+<" "><"))
         rctx  (render-ctx ctx popup)
-        html  (str (when-not (str/blank? (:content obj)) (site-html ctx (r/block-html rctx (str (:content obj)))))
-                   (props-html ctx rctx obj))
+        html  (unhover (str (when-not (str/blank? (:content obj)) (site-html ctx (r/block-html rctx (str (:content obj)))))
+                            (props-html ctx rctx obj))
+                       popup)
         level (:prop/heading obj)]
     [[:li.block (raw-string (if (integer? level) (format "<h%d>%s</h%d>" level html level) html))]
      (if popup nil subs)]))
@@ -175,7 +188,7 @@
                                       lvl (or (:prop/heading o) (some-> (re-find #"^(#{1,6})\s" c) second count))]
                                   (cons (when (integer? lvl)
                                           [lvl (anchor bu o) (-> c (str/replace #"^#{1,6}\s+" "") str/split-lines first
-                                                                 (str/replace parse/wikilink-re "$1"))])
+                                                                 (str/replace parse/wikilink-re "$1") r/title-text)])
                                         (walk bu))))
                               (kids u)))]
       (remove nil? (walk page)))))
@@ -265,6 +278,7 @@
               :integrity "sha384-F3w7mX95PdgyTmZZMECAngseQB83DfGTowi0iMjiWaeVhAn4FJkqJByhZMI3AhiU" :crossorigin "anonymous"}]
       [:link {:rel "stylesheet" :href "assets/default.css"}]
       (for [css (:site-css ctx)] [:link {:rel "stylesheet" :href css}])
+      [:link {:rel "stylesheet" :href "assets/thirdmind-site.css"}]
       [:link {:rel "preconnect" :href "https://fonts.gstatic.com"}]
       [:link {:rel "stylesheet" :href "https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;550&display=swap"}]
       [:link {:rel "stylesheet" :href "https://fonts.googleapis.com/css2?family=Varela+Round:wght@400;600&display=swap"}]
@@ -289,6 +303,24 @@
       [:script {:src "https://cdn.jsdelivr.net/npm/bootstrap@5.1.1/dist/js/bootstrap.bundle.min.js"
                 :integrity "sha384-/bQdsTh/da6pkI1MST/rWKFNjaCP5gBSY4sEBT38Q/9RBh9AH40zEOg7Hlq2THRZ" :crossorigin "anonymous"}]]]))
 
+;;; Maps (phase 3): one graph for the site, graphs/map.json, drawn in the browser by assets/map.js
+
+(def ^:private vega-head
+  (list [:script {:src "https://cdn.jsdelivr.net/npm/vega@5.20.2"}]
+        [:script {:src "https://cdn.jsdelivr.net/npm/vega-embed@6.17.0"}]
+        [:script {:src "assets/map.js"}]))
+
+(defn- map-widget [slug]
+  [:div.card.my-3
+   [:h5.card-header
+    [:a {:data-bs-toggle "collapse" :data-bs-target "#mapgraph" :aria-expanded "false"
+         :aria-controls "mapgraph" :onclick "toggleMap();"} "Map"]
+    [:span {:style "float: right; display: flex;"} [:a.pagelink {:href "Map"} "Full"]]]
+   [:div#mapgraph.collapse {:class "show"}
+    [:div.card-body {:style "padding: 2px;"}
+     [:div.graph {:id "pagemap" :style "height: 350px;"}]
+     [:script (raw-string (format "thirdmindPageMap('#pagemap', %s);" (json/write-str slug :escape-slash false)))]]]])
+
 (defn- logseq-url [ctx name]
   (str "logseq://graph/" (:graph-name ctx) "?page=" (java.net.URLEncoder/encode (str name) "UTF-8")))
 
@@ -303,9 +335,10 @@
                        :title-html (r/title-html name)
                        :slug       slug
                        :contents   [:div [:div (date-range ctx page)]
-                                    [:span.local " " [:a {:href (logseq-url ctx name)} "Open in Logseq"]]
+                                    [:span.local " " [:a {:href (r/tine-url name)} "Open in Tine"] " · " [:a {:href (logseq-url ctx name)} "Open in Logseq"]]
                                     [:hr] (outline ctx page) [:hr]]
-                       :widgets    [(about-widget ctx) search-widget (contents-widget ctx page)
+                       :head-extra vega-head
+                       :widgets    [(about-widget ctx) search-widget (contents-widget ctx page) (map-widget slug)
                                     (page-tree-widget ctx page) (incoming-widget ctx page) (twin-widget ctx name)]})))))
 
 ;;; Site-wide: the search index (assets/index.js, read by search.js and the Index page's grid.js)
@@ -350,6 +383,40 @@
                                        [:script {:src "assets/grid.js"}])
                      :widgets [(about-widget ctx) search-widget]}))))
 
+(def default-graph-exclude
+  "Tags left off maps: they link everything that uses them (goddinpotty's :graph-exclude-tags)."
+  ["AskClaude" "book" "influence"])
+
+(defn map-data
+  "graphs/map.json: {:nodes [{:name :link :depth :entry}] :nbrs [[node index ...]]}, published
+  pages by name, linked where a shown block on one refs the other (or one is the other's namespace
+  parent). Neighbours sorted by index, so the 8 a map follows are stable."
+  [{:keys [fetch slugs blocks shown? canon inc] :as ctx}]
+  (let [excl  (set (map canon (:graph-exclude ctx default-graph-exclude)))
+        pages (vec (sort-by #(str/lower-case (str (:name (fetch %)))) (remove excl (keys slugs))))
+        idx   (zipmap pages (range))
+        ds    (depths inc pages)
+        edges (set (for [p pages
+                         t (concat (for [{u :uri o :obj} (blocks p) :when (shown? u), t (:refs o)] t)
+                                   (some->> (:name (fetch p)) (re-find #"^(.*)/[^/]*$") second canon list))
+                         :let [a (idx p) b (idx t)]
+                         :when (and b (not= a b))]
+                     [(min a b) (max a b)]))
+        nbrs  (reduce (fn [v [a b]] (-> v (update a conj b) (update b conj a))) (vec (repeat (count pages) [])) edges)]
+    (json/write-str
+     {:nodes (for [p pages] {:name (r/title-text (:name (fetch p))) :link (slugs p) :depth (ds p) :entry (zero? (ds p))})
+      :nbrs  (map sort nbrs)}
+     :escape-slash false)))
+
+(defn- map-page [ctx]
+  (str (h/html
+        (layout ctx {:title "Map" :title-html "Map" :slug "Map"
+                     :contents [:div "Not really a map in any sense of the word. It's on my to-do list, make an actual 2D navigable plane layout, hopefully clustered sanely. But with constant positions, to the extent possible.  "
+                                [:div.graph {:id "fullmap" :style "height: 1000px;"}]
+                                [:script (raw-string "thirdmindFullMap('#fullmap');")]]
+                     :head-extra vega-head
+                     :widgets []}))))
+
 ;;; Files
 
 (defn- index-html [ctx]
@@ -367,10 +434,12 @@
 (defn outputs
   "{path html} for the whole site, less copied files."
   [ctx]
-  (into {"index.html" (index-html ctx) "assets/index.js" (search-index ctx)}
+  (into {"index.html" (index-html ctx) "assets/index.js" (search-index ctx)
+         "graphs/map.json" (map-data ctx) "assets/map.js" (slurp (io/resource "site/map.js"))
+         "assets/thirdmind-site.css" (slurp (io/resource "site/thirdmind-site.css"))}
         (concat (for [[p slug] (:slugs ctx)] [slug (page-html ctx p)])
-                ;; a graph page named Index would be overwritten: goddinpotty's generated one wins
-                [["Index" (index-page ctx)]])))
+                ;; a graph page named Index or Map would be overwritten: the generated one wins
+                [["Index" (index-page ctx)] ["Map" (map-page ctx)]])))
 
 (def manifest-name ".thirdmind-site.edn")
 

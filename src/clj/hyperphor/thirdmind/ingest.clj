@@ -39,6 +39,11 @@
        (map #(-> % str/trim (str/replace #"^#?\[\[|\]\]$" "") (str/replace #"^#" "")))
        (remove str/blank?)))
 
+(defn page-aliases
+  "A page's aliases: alias:: values, plus aliases:: (a common slip, which goddinpotty also took)."
+  [props]
+  (distinct (concat (split-list (get props "alias")) (split-list (get props "aliases")))))
+
 ;;; Graph
 
 (defn block-id
@@ -63,7 +68,7 @@
         ;; an alias never shadows a page with its own file (Logseq links [[name]] to that page)
         file-page? (fn [k] (or (contains? by-key k) (when-let [f (:file-page? ctx)] (f k))))
         aliases    (into (or (:aliases ctx) {})
-                         (for [p pages, a (split-list (get-in p [:props "alias"]))
+                         (for [p pages, a (page-aliases (:props p))
                                :when (not (file-page? (page-key a)))]
                            [(page-key a) (page-key (:name p))]))
         resolve-pg (fn [name] (let [k (page-key name)] (get aliases k k)))
@@ -104,7 +109,7 @@
                                      {:name name :file file :journal journal? :blocks (count blocks)})
                         journal-day         (assoc :journal-day journal-day)
                         (seq tags)          (assoc :tags (mapv #(page-uri realm %) tags))
-                        (get props "alias") (assoc :alias (vec (split-list (get props "alias")))))])
+                        (seq (page-aliases props)) (assoc :alias (vec (page-aliases props))))])
         file-keys  (set (keys by-key))
         page-tags  (mapcat #(map resolve-pg (split-list (get-in % [:props "tags"]))) pages)
         stub-keys  (sort (remove file-keys (into @page-refs page-tags)))

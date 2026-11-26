@@ -20,15 +20,21 @@
    "pages/Paren.md"        "title:: Paren\n\n- This page (#Private) is private too"
    "pages/Heading.md"      "# Heading text\n\t- nested under the heading #Private\n- fine"
    "pages/Aliased.md"      "alias:: Twin\n\n- reached only through its alias"
+   "pages/Asked.md"        "- what is x? #AskClaude\n\t- the **answer**\n\t- more of it"
+   "pages/Plural.md"       "aliases:: Other name\n\n- declared with aliases::"
    "pages/Twin.md"         "- has its own file, so the alias joins rather than shadows it"
    "journals/2024_01_01.md" "- journal links [[Hidden by journal]]\n- a diary line about [[Home]]"
-   "pages/Hidden by journal.md" "- only a journal links here"})
+   "pages/Hidden by journal.md" "- only a journal links here"
+   "journals/2024_01_02.md" "- a post about [[Blygged]] #blyg\n\t- its child links [[Blyg child]]\n\t- and [[Blyg secret]]\n\t\t- #Private"
+   "pages/Blygged.md"      "- linked from a journal #blyg item"
+   "pages/Blyg child.md"   "- linked from that item's child"
+   "pages/Blyg secret.md"  "- linked only from a private child of the item"})
 
 (defn- graph-fixture [f]
   (let [dir  (.toFile (java.nio.file.Files/createTempDirectory "site-include" (make-array java.nio.file.attribute.FileAttribute 0)))
         db   (java.io.File/createTempFile "site-include" ".db")]
     (doseq [[rel text] files] (io/make-parents (io/file dir rel)) (spit (io/file dir rel) text))
-    (spit (io/file dir "pages/Home.md") (str (files "pages/Home.md") "\n- [[Paren]] [[Heading]] [[Twin]]"))
+    (spit (io/file dir "pages/Home.md") (str (files "pages/Home.md") "\n- [[Paren]] [[Heading]] [[Twin]] [[Asked]] [[Other name]]"))
     (try
       (core/fresh-store! (str db) realm)
       (ingest/ingest! (str dir) realm)
@@ -39,6 +45,13 @@
 
 (defn- names [uris] (set (map #(java.net.URLDecoder/decode (subs % (inc (.lastIndexOf ^String % "/"))) "UTF-8") uris)))
 
+(deftest blyg-items-start-the-walk
+  (let [ps (names (:pages (include/published realm {:exit-tags ["Private"] :entry-pages ["Home"]
+                                                    :entry-block-tags ["blyg"]})))]
+    (is (every? ps ["blygged" "blyg child"]))
+    (is (not (ps "blyg secret")) "a private child of a #blyg item doesn't count")
+    (is (not-any? #(re-find #"2024" %) ps) "the journal itself stays out")))
+
 (deftest published-set
   (let [{:keys [pages hidden]} (include/published realm {:exit-tags ["Private"] :entry-tags ["EntryPoint"]
                                                          :entry-pages ["Home"]})
@@ -47,6 +60,7 @@
     (is (not-any? ps ["deep" "secret" "secret/sub" "paren" "hidden by journal" "jan 1st, 2024" "other"])
         "private pages, their namespace children, journal-only and stub-joined pages stay out")
     (is (not (ps "orphan stub")) "stubs aren't walked or published")
+    (is (ps "plural") "aliases:: works like alias::")
     (is (= 4 (count (filter #(.contains ^String % "/block/linked") hidden))) "private blocks and children are hidden")
     (is (some #(.contains ^String % "/block/heading") hidden) "a bullet indented under heading text nests under it")))
 
@@ -67,7 +81,19 @@
     (is (re-find #"Incoming links" (page "Home")))
     (is (not (re-find #"diary line" (page "Home"))) "a journal block linking a page isn't among its incoming links")
     (is (re-find #"url=Home" (page "index.html")))
+    (let [asked (page "Asked")]
+      (is (re-find #"hover-tag-lozenge[^>]*>Ask Claude</span><div class=\"hover-tag-popup\"><ul" asked)
+          "an #AskClaude answer is a popup, its markup intact")
+      (is (not (re-find #"(?s)hover-tag-popup.*</p>.*</div></span>" asked)))
+      (is (= 1 (count (re-seq #"the <strong>answer</strong>" asked))) "shown once, in the popup"))
     (is (re-find #"myGrid" (page "Index")))
+    (is (re-find #"thirdmindFullMap" (page "Map")))
+    (is (re-find #"thirdmindPageMap\('#pagemap', \"Linked\"\)" (page "Linked")))
+    (let [{:keys [nodes nbrs]} (clojure.data.json/read-str (page "graphs/map.json") :key-fn keyword)
+          links (set (map :link nodes))]
+      (is (links "Home"))
+      (is (not-any? links ["Secret" "Deep"]) "the map has only published pages")
+      (is (= (count nodes) (count nbrs))))
     (let [rows (clojure.data.json/read-str (page "assets/index.js") :key-fn keyword)]
       (is (some #(= "Linked" (:url %)) rows))
       (is (not-any? #(re-find #"a child|whole page private" (:body %)) rows) "the search index has only shown text"))

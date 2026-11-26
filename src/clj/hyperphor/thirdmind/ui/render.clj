@@ -33,6 +33,11 @@
   [s]
   (str/replace (java.net.URLEncoder/encode (str s) "UTF-8") "+" "%20"))
 
+(defn tine-url
+  "Link that opens page-name in Tine (its tine://page/<name> scheme, on the graph Tine has open)."
+  [page-name]
+  (str "tine://page/" (url-encode page-name)))
+
 (defn page-href [key] (str "/page/" key))
 (defn block-href [id] (str "/block/" (url-encode id)))
 
@@ -112,6 +117,21 @@
   (let [url (str/replace url #"^https://(?:www\.)?x\.com/" "https://twitter.com/")]
     (format "<blockquote class=\"twitter-tweet\"><a href=\"%s\">%s</a></blockquote>" (escape url) (escape url))))
 
+(defn embed-src
+  "The URL to put in an iframe for url: Spotify pages become their /embed/ player, others as given."
+  [url]
+  (if-let [[_ path] (re-matches #"https://open\.spotify\.com/(?:embed/)?((?:playlist|album|track|episode|show|artist)/[^?#\s]+).*" url)]
+    (str "https://open.spotify.com/embed/" path)
+    url))
+
+(defn- generic-iframe
+  "{{iframe url}}: url framed full width; Spotify single items get their short player."
+  [url]
+  (let [src (embed-src url)
+        h   (if (re-find #"spotify\.com/embed/(?:track|episode)/" src) 152 400)]
+    (format "<iframe class=\"embed\" src=\"%s\" style=\"width:100%%;height:%dpx;border:0;border-radius:12px\" allow=\"autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture\" loading=\"lazy\"></iframe>"
+            (escape src) h)))
+
 (declare link-refs)
 
 (defn- tag-link
@@ -125,6 +145,7 @@
     (case (str/lower-case name)
       ("tweet" "twitter") (if url (tweet url) (escape m))
       ("video" "youtube") (if url (video url) (escape m))
+      "iframe"   (if url (generic-iframe url) (escape m))
       "embed"    (if-let [[_ id] (re-find parse/block-ref-re arg)]
                    (block-link ctx id)
                    (link-refs ctx arg))

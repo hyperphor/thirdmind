@@ -1,6 +1,6 @@
 # Static site generation, incrementally (replacing goddinpotty)
 
-Status: phase 1 (inclusion) done, decisions pending; phase 2 (renderer) built, not yet live. Branch `static-gen`. 2026-11-23.
+Status: phases 1–3 done (inclusion decisions pending), not yet live. Branch `static-gen`. 2026-11-24.
 
 ## Goal
 
@@ -60,6 +60,11 @@ goddinpotty decides this with a reachability walk (`database/compute-depths`, `b
   that hides it and everything under it. So an exit tag in *any* top-level block hides the whole
   page, and `- #Private` as the only child of a block hides that block. A `#Private` on `foo`
   also hides `foo/bar`.
+- **#blyg items** (ThirdMind only, 2026-11-25): a block tagged `#blyg` (or `#blyg-pin`,
+  `#blyg-reply`, `#blyg-response`; config `:entry-block-tags`) and its subtree, less anything
+  exit-tagged, also start the walk, journal or not. They're public on the blyg already, so the
+  pages they link to are published. This added 6 pages (Doom, Desire Management, Kabir, Old,
+  Peter Principle, left-accelerationism).
 - **Displayed:** the page must be included, and have content or children, or more than one
   included referrer.
 - Journals aren't published (`:daily-notes? false`). Today 2900 pages and 2143 journals give
@@ -336,6 +341,21 @@ time they publish (2 at present).
 - goddinpotty's special tags (`#WordHistory` charts, `#WordCount`) aren't ported.
 - No `<!DOCTYPE html>`, as goddinpotty, so the CSS behaves the same (quirks mode).
 - Page Tree sorts case-insensitively rather than by numeric prefix.
+
+## Phase 3 results (2026-11-24)
+
+The search index and Index page landed in phase 2. The maps are now one site-wide graph,
+`graphs/map.json` (170 KB: 1568 pages, 4307 links), in place of goddinpotty's ~1580 per-page
+specs. Nodes are published pages by name, except `:graph-exclude` tags (default AskClaude, book,
+influence). Links come from shown blocks' refs and namespace parents, with each node's
+neighbours sorted. `resources/site/map.js`, copied to `assets/map.js`, draws them with
+goddinpotty's Vega force spec. The sidebar map is the page's radius-2 neighbourhood, following at
+most 8 neighbours per node; the Map page shows everything, entry pages highlighted. One edit
+now rewrites one 170 KB file instead of up to hundreds of map files.
+
+Differences: goddinpotty followed an arbitrary 8 of a hub's neighbours, ThirdMind the first 8 by
+name. `graphs/pages.json` isn't written: only goddinpotty's `#dataviz1` tag read it, and that's
+unported along with `#WordHistory`.
 
 ## Open questions
 

@@ -147,7 +147,7 @@
 (defn- md-refs [ctx s]
   (str/replace s md-re
                (fn [[_ mac arg alt img alabel adest llabel lpage btag wiki tag]]
-                 (cond mac    (if (#{"tweet" "twitter" "video" "youtube"} (str/lower-case mac))
+                 (cond mac    (if (#{"tweet" "twitter" "video" "youtube" "iframe"} (str/lower-case mac))
                                 (or (re-find #"https?://[^\s)\]}]+" arg) "")
                                 "")
                        img    (format "![%s](%s)" alt (asset-url ctx img))

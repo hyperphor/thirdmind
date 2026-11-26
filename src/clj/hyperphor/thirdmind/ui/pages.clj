@@ -33,7 +33,7 @@
      (if (:name p) (raw-string (r/title-html (:name p))) (uri-key uri))]))
 
 ;;; Logseq hides these too
-(def ^:private hidden-props #{"collapsed" "created-at" "updated-at" "alias" "tags"})
+(def ^:private hidden-props #{"collapsed" "created-at" "updated-at" "alias" "aliases" "tags"})
 
 (defn- visible-props [obj]
   (for [[k v] (sort-by key obj)
@@ -167,8 +167,9 @@
                  [:p.apparatus
                   (when from (list [:span.page-time {:title "Earliest block created – latest block updated"}
                                     (date-range from to)]
-                                   (when graph " · ")))
-                  (when graph [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"])])
+                                   " · "))
+                  [:a.tine {:href (r/tine-url (:name p))} "Open in Tine"]
+                  (when graph (list " · " [:a.logseq {:href (logseq-url graph (:name p))} "Open in Logseq"]))])
                (when (seq (:alias p)) [:p.aliases "Also: " (str/join ", " (:alias p))])
                (when (seq (:tags p)) [:p.tags (interpose " " (map #(page-link ctx %) (:tags p)))])
                (props p)

@@ -27,6 +27,7 @@
     (merge (dissoc site :goddinpotty)
            {:exit-tags   (or (:exit-tags site) (:exit-tags gp))
             :entry-tags  (:entry-tags site ["EntryPoint"])
+            :entry-block-tags (:entry-block-tags site blyg/control-tags)
             :entry-pages (cons main (:entry-pages site))
             :main-page   main
             :base-url    (or (:base-url site) (:base-url gp))

@@ -1,7 +1,8 @@
 (ns hyperphor.thirdmind.site.include
   "What the site publishes, by goddinpotty's rules (database/compute-depths, batadase): a walk from
   the entry pages along parent, child and ref links in both directions, never entering an
-  exit-tagged block (or anything under one) or a journal."
+  exit-tagged block (or anything under one) or a journal. Unlike goddinpotty, #blyg items (journal
+  ones too) are starting points as well: they're public already, so what they link to is."
   (:require [clojure.set :as set]
             [clojure.string :as str]
             [hyperphor.thirdmind.ingest :as ingest]
@@ -23,8 +24,9 @@
 (defn compute
   "{:pages #{published page uri} :included #{uri} :hidden #{block uri on a published page, left out}
   :via {included uri → uri it was reached from} :exit? fn}.
-  opts: :realm, :aliases {alias-key page-key}, :exit-tags, :entry-tags, :entry-pages (names)."
-  [objs {:keys [realm aliases exit-tags entry-tags entry-pages]}]
+  opts: :realm, :aliases {alias-key page-key}, :exit-tags, :entry-tags, :entry-pages (names),
+  :entry-block-tags (names: a block carrying one, and its subtree, less anything exit-tagged, starts the walk)."
+  [objs {:keys [realm aliases exit-tags entry-tags entry-pages entry-block-tags]}]
   (let [canon    (fn [name] (let [k (ingest/page-key name)] (ingest/page-uri realm (get aliases k k))))
         exit     (set (map canon exit-tags))
         entry    (set (map canon entry-tags))
@@ -49,7 +51,14 @@
         journal? (fn [u] (let [o (objs u)] (:journal (if (page-uri? u) o (objs (:page o))))))
         exit?    (fn [u] (or (journal? u) (exit-tagged? u)))
         entry-p  (set (map canon entry-pages))
-        starts   (for [[u o] objs :when (and (page-uri? u) (node? u) (or (entry-p u) (tagged? refs entry u)))] u)
+        bentry   (set (map canon entry-block-tags))
+        subtree  (fn sub [u] (when-not (exit-tagged? u) (cons u (mapcat sub (children u)))))
+        starts   (concat
+                  (for [[u o] objs :when (and (page-uri? u) (node? u) (or (entry-p u) (tagged? refs entry u)))] u)
+                  (distinct (for [[u o] objs
+                                  :when (and (not (page-uri? u)) (some bentry (concat (:tags o) (:refs o))))
+                                  s (subtree u)]
+                              s)))
         nbrs     (fn [u] (concat (children u) (filter node? (refs u)) (ref-by u)
                                  (when-not (page-uri? u) [(:parent (objs u))])))
         ;; via: {uri the node it was reached from}, entry pages mapping to nil

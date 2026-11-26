@@ -48,7 +48,9 @@ src/clj/hyperphor/thirdmind/
   blyg/remote.clj  — reply targets fetched (snapshots); webmentions sent
   blyg/cli.clj     — `lein blyg preview | import | publish | diff | push | mention | parity`
   site/include.clj — what the site publishes: goddinpotty's entry/exit walk over the db
-  site/render.clj  — published pages → HTML in goddinpotty's markup; build! writes only changes
+  site/render.clj  — published pages → HTML in goddinpotty's markup, search index, Index and Map
+                     pages, graphs/map.json; build! writes only changes
+resources/site/map.js — client-side page and site maps (Vega) over graphs/map.json
   site/cli.clj     — `lein site published | parity | why | build` (design/static-site.md)
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
