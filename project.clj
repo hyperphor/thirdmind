@@ -7,7 +7,7 @@
                                     :username :env/clojars_username
                                     :password :env/clojars_password}]]
   :dependencies [[org.clojure/clojure "1.12.3"]
-                 [com.hyperphor/tunamelt "0.1.0"]
+                 [com.hyperphor/tunamelt "0.2.0"]
                  [org.commonmark/commonmark "0.24.0"]
                  [org.commonmark/commonmark-ext-autolink "0.24.0"]
                  [org.clojure/data.json "2.5.2"]
