@@ -73,6 +73,7 @@
         out  (.toFile (java.nio.file.Files/createTempDirectory "site-out" (make-array java.nio.file.attribute.FileAttribute 0)))
         page #(slurp (io/file out %))]
     (is (= 0 (:deleted (render/build! ctx out))))
+    (is (.isFile (io/file out ".nojekyll")) "so GitHub Pages keeps _-prefixed pages")
     (is (.isFile (io/file out "Home")))
     (is (not (.exists (io/file out "Secret"))))
     (let [linked (page "Linked")]

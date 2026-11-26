@@ -440,7 +440,8 @@
 (defn outputs
   "{path html} for the whole site, less copied files. Page files get :page-suffix (eg \".html\"); links don't."
   [{sfx :page-suffix :as ctx}]
-  (into {"index.html" (index-html ctx) "assets/index.js" (search-index ctx)
+  ;; .nojekyll: GitHub Pages would otherwise drop files starting with _ (eg __Erlebnis__)
+  (into {"index.html" (index-html ctx) ".nojekyll" "" "assets/index.js" (search-index ctx)
          "graphs/map.json" (map-data ctx) "assets/map.js" (slurp (io/resource "site/map.js"))
          "assets/thirdmind-site.css" (slurp (io/resource "site/thirdmind-site.css"))}
         (for [[path html] (concat (for [[p slug] (:slugs ctx)] [slug (page-html ctx p)])

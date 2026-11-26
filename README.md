@@ -102,7 +102,8 @@ Each page is written as a file named after the page (`Computer Power and Human R
 extension. The server must send these files as `text/html`, which most static hosts won't
 do for a file with no extension. With `:page-suffix ".html"` the files get an `.html`
 suffix and the links stay the same, which suits hosts that serve `/Foo` from `Foo.html`
-(GitHub Pages, Netlify, Cloudflare Pages).
+(GitHub Pages, Netlify, Cloudflare Pages). The build also writes an empty `.nojekyll`, without
+which GitHub Pages would drop pages whose names start with `_`.
 
 Besides the graph's pages, the build writes `index.html`, which redirects to the main page,
 and two generated pages: `Index`, a sortable table of all pages, and `Map`, a graph of the

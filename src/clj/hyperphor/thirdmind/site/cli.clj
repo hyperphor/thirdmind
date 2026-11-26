@@ -13,6 +13,7 @@
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.site.include :as include]
             [hyperphor.thirdmind.site.render :as render]
+            [hyperphor.thirdmind.times :as times]
             [hyperphor.thirdmind.watch :as watch]
             [hyperphor.tunamelt.core :as t]))
 
@@ -200,7 +201,8 @@
       ;; catch up with the graph (or build a new db), as lein watch does on start
       (not (some #{"--no-sync"} more))
       (do (t/configure! {:store db :realm (:realm cfg)})
-          (watch/init! {:dir (:graph cfg) :realm (:realm cfg) :db db}))
+          (watch/init! {:dir (:graph cfg) :realm (:realm cfg) :db db
+                        :times? (times/git-repo? (:graph cfg))}))
 
       :else (t/configure! {:store db :realm (:realm cfg)}))
     (let [{:keys [pages hidden] :as inc} (include/published (:realm cfg) opts)]
