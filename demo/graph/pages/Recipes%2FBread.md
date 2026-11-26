@@ -1,0 +1,2 @@
+- Flour, water, salt, yeast.
+- The file is `Recipes%2FBread.md`; Logseq encodes the slash in the file name.

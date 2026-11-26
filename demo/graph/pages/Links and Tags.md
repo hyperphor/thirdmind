@@ -1,0 +1,6 @@
+- A page link: [[Formatting]]. A link to a page with no file of its own, such as [[Empty Page]], is shown as plain text.
+- A tag is a link too: #Featured
+- [[Knowledge Graph]] is an alias, so it links to the page [[Graphs]].
+- Namespaced pages: [[Recipes/Bread]] is a child of [[Recipes]].
+- External links work as usual: [Logseq](https://logseq.com).
+- Each page lists its incoming links at the bottom; this one's come from [[Welcome]] and [[Graphs]].

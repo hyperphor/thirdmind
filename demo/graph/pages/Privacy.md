@@ -1,0 +1,8 @@
+- ThirdMind leaves out any block that carries an exit tag, together with everything nested under it. The default exit tag is Private; the config's `:exit-tags` sets the list.
+- A block whose child carries the tag is left out too, since Logseq users often tag a block by giving it a child that holds just the tag. So a private block hides its parent as well.
+- This block is published, though one under it is private.
+	- This one isn't: its child carries the tag. Neither is anything else under it, such as this link to [[Hidden Behind Private]].
+		- #Private
+	- This sibling is published.
+- The page Hidden Behind Private is linked only from a hidden block, so the walk never reaches it and it isn't published.
+- [[Secret Plans]] has the Private tag in a top-level block, which hides the whole page. Links to it, like the one in this block, are shown as plain text.

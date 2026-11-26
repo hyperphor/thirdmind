@@ -1,5 +1,5 @@
 (ns hyperphor.thirdmind.config
-  "Per-graph ThirdMind config: an EDN file such as config/ammdi.edn.
+  "Per-graph ThirdMind config: an EDN file such as demo/config.edn.
   {:graph dir, :db path, :realm, :port, :write?, :blygger {...}}; :realm and :db default from :graph."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]

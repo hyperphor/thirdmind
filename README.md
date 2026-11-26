@@ -27,17 +27,33 @@ rough edges, and read [Limits](#limits) before relying on it.
 Clone this repository and run everything from its top directory. Dependencies, Tunamelt
 included, come from Clojars on first run.
 
+## Try the demo
+
+`demo/graph` is a small graph whose pages each show one feature: links, aliases and
+namespaces, private blocks and pages, formatting, journals, and the rules for what gets
+published. Its config is [demo/config.edn](demo/config.edn).
+
+```bash
+lein site build demo/config.edn
+npx serve target/demo-site
+```
+
+Then open the address `serve` prints. Compare the site with the graph's files: the pages the
+demo describes as unpublished are missing, and so are the private blocks.
+
 ## Publish a graph as a website
 
-1. Copy the example config and edit it:
+1. Copy the demo config and edit it:
 
    ```bash
-   cp config/examples/site.edn config/mysite.edn
+   cp demo/config.edn config/mysite.edn
    ```
 
-   At minimum set `:graph` to your graph's folder, and `:main-page` inside the `:site` map to
-   the page that should be the front page. The [configuration](#configuration) section lists
-   every setting.
+   At minimum set `:graph` to your graph's folder, `:db` to where its database should go (or delete the line for `<graph folder name>.db`), and
+   `:main-page` inside the `:site` map to the page that should be the front page. The demo's
+   `:entry-tags`, `:short-title` and other optional keys can go. The
+   [configuration](#configuration) section lists every setting. Files in `config/` are
+   ignored by git, so your config stays out of this repository.
 
 2. Build:
 
@@ -59,7 +75,7 @@ included, come from Clojars on first run.
 
 Commands look for the config in this order: a path given as the first argument
 (`lein site build config/mysite.edn`), then `$THIRDMIND_CONFIG`, then the only `.edn` file
-directly inside `config/`. Files in `config/examples/` don't count.
+directly inside `config/`.
 
 ### What gets published
 
@@ -158,9 +174,6 @@ in.
 | `:blyg?` | true when `:blygger` is set | Show a "Blyg" link (to `blyg/`) in the navbar |
 | `:goddinpotty` | | A goddinpotty config to take `:exit-tags`, `:main-page`, `:base-url` and `:output-dir` from. Only for migrating from goddinpotty |
 
-`config/ammdi.edn` is the config for the graph ThirdMind was built for, with every section
-filled in.
-
 ## Other commands
 
 ```bash
@@ -200,13 +213,23 @@ Keep the graph under version control anyway.
 permalink pages and a feed, in a directory of a site repository. `lein blyg push` commits and
 pushes only that directory, and `lein blyg mention` sends webmentions for replies. With
 `:auto-publish? true`, `lein watch` publishes and pushes once `#blyg` edits have been still for
-`:quiet-ms`. The `:blygger` section of `config/ammdi.edn` shows the settings, and
-[design/blygger.md](design/blygger.md) describes the format.
+`:quiet-ms`. [design/blygger.md](design/blygger.md) describes the format. The settings:
+
+```clojure
+:blygger
+{:goddinpotty   "/path/to/goddinpotty-config.edn"   ; site URL and exit tags
+ :state         "/path/to/graph/.thirdmind-blyg-state.edn"
+ :ids-backup    "/path/to/graph/.thirdmind-ids.edn"
+ :site-repo     "/path/to/site-repo"
+ :mount         "notes/blyg"                        ; the blyg's directory in site-repo
+ :remote        "origin"
+ :auto-publish? true                                ; lein watch publishes and pushes
+ :quiet-ms      120000}                             ; once #blyg edits are still this long
+```
 
 `lein blyg` needs a goddinpotty config file (`:blygger :goddinpotty`), from which it reads the
 site URL and exit tags, and a goddinpotty-built site, from which it learns which pages are
-published. Until that changes it is only usable alongside goddinpotty, so its settings aren't
-documented here.
+published. Until that changes it is only usable alongside goddinpotty.
 
 ## Limits
 

@@ -10,7 +10,9 @@ ThirdMind: side process + knowledge store for a Logseq graph. Spec:
 lein test
 lein run /opt/mt/repos/ammdi     # real graph; treat it as read-only
 lein watch /opt/mt/repos/ammdi   # side process; Ctrl-C to stop
-lein watch | lein serve | lein times   # with no args: graph, db, port etc. from config/ammdi.edn
+lein watch | lein serve | lein times   # with no args: graph, db, port etc. from config/ammdi.edn,
+                                       # a gitignored link to /opt/mt/repos/ammdi/thirdmind.edn
+lein site build demo/config.edn  # the demo graph → target/demo-site
 lein blyg publish [--dry-run]    # #blyg items → the site repo's blyg dir (settings: config :blygger)
 lein blyg push                   # commit + push only that dir
 lein blyg mention                # webmentions for stubs now live
@@ -27,7 +29,7 @@ src/clj/hyperphor/thirdmind/
   parse.clj   — line-based Logseq markdown parser (names, properties, outline, refs)
   ingest.clj  — parsed graph → Tunamelt page/block/file objects; ref/alias resolution;
                 update-file! (incremental, one file) and new-tags
-  config.clj  — per-graph config (config/ammdi.edn): :graph :db :port :write? :blygger {...}
+  config.clj  — per-graph config (demo/config.edn; yours in config/, gitignored): :graph :db :port :write? :blygger {...}
   core.clj    — -main: fresh db, ingest, report; outline, most-referenced
   search.clj  — `lein search`: t/search (FTS) hits grouped into pages
   watch.clj   — `lein watch [--write]`: poll graph, sync changed files, run tag handlers,
@@ -54,6 +56,7 @@ resources/site/map.js — client-side page and site maps (Vega) over graphs/map.
   site/cli.clj     — `lein site published | parity | why | build` (design/static-site.md)
   ask_claude.clj  — `… #AskClaude` / `#AskClaudePage` → answer nested under a #AskClaude wrapper (claude.clj: API)
 test/resources/graph — fixture graph covering parser edge cases
+demo/graph — demo graph for the README: one page per site feature; demo/config.edn
 ```
 
 ## Rules

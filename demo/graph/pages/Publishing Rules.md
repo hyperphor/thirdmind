@@ -1,0 +1,4 @@
+- The walk starts at the main page (`:main-page`), any `:entry-pages`, pages with `public:: true`, and pages tagged with one of `:entry-tags`, then follows links.
+- [[Open Page]] has `public:: true`, so it would be published even if nothing linked to it.
+- The demo config sets `:entry-tags ["Featured"]`, so [[Featured Page]], tagged #Featured, is published too.
+- The page Unlinked Page has neither, and nothing published links to it, so it isn't published.

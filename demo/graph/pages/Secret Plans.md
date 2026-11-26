@@ -1,0 +1,2 @@
+- #Private
+- A top-level exit tag hides the whole page, wherever it is linked from.
