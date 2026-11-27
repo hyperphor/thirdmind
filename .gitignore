@@ -12,3 +12,8 @@ checkouts/
 *.db-wal
 *.db-shm
 *.db*
+claude-code/
+mt-notes.md
+
+# your own configs (the demo is demo/config.edn)
+config/*.edn

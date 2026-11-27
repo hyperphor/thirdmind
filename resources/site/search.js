@@ -1,0 +1,145 @@
+
+// Hacky code to support search widget
+// TODO should have a visible "no results" indicater
+// TODO might want to trim results to n or use threshold
+
+// Treat / as separator
+elasticlunr.tokenizer.seperator = /[\s\-\/]+/;
+
+var index = elasticlunr(function () {
+    this.addField('title');	// TODO adjust config
+    this.addField('alias');
+    this.addField('body');
+    this.setRef('id');		// TODO is this used?
+    // Stemming fights the "expand" prefix search used for search-as-you-type:
+    // it only reduces a fully-typed word to its stem (eg "operators" -> "oper"),
+    // so a partial word being typed (eg "opera", "operat") usually isn't a
+    // prefix of that stem and fails to match until the word is complete.
+    // Dropping the stemmer keeps indexed terms as literal words, which prefix-
+    // matches consistently at every length typed.
+    this.pipeline.remove(elasticlunr.stemmer);
+});
+
+function Get(yourUrl){
+    var Httpreq = new XMLHttpRequest(); // a new request
+    Httpreq.open("GET",yourUrl,false);
+    Httpreq.send(null);
+    return Httpreq.responseText;          
+}
+
+function getDocs() {
+    var docs = JSON.parse(Get("assets/index.js"));
+    docs.forEach(function(doc) {
+	index.addDoc(doc, false);
+    });
+}
+
+function keypress(evt) {
+// for search on enter, but doing it on all keys is better
+//    if (evt.keyCode == 13) {
+    doSearch();
+}
+
+var config = {
+    fields: {
+        title: {boost: 2},
+	alias: {boost: 2},
+        body: {boost: 1}
+    },
+    expand: true
+}
+
+function doSearch() {
+    if (index.documentStore.length == 0) {
+	getDocs();
+    }
+    var term = document.getElementById("searcht").value;
+    var results = index.search(term, config);
+    displayResults(results);
+}
+
+function insertText(container, text) {
+    var node = document.createTextNode(text);
+    container.appendChild(node);
+    return node;
+}
+
+function insertLink(container, url, title) {
+    var div = document.createElement('div');    
+    div.setAttribute('class','searchentry');
+    var link = document.createElement('a');
+    link.setAttribute('href', url); 
+    // link.setAttribute('target', '_blank'); 
+    insertText(link, title);
+    div.appendChild(link);
+    container.appendChild(div);
+    return link;
+}
+
+// TODO should limit to first n
+function displayResults(results) {
+    var out = document.getElementById('searcho');
+    out.style.display = 'block'; 
+    out.innerHTML = "";
+    if (results.length == 0) {
+	insertText(out, "No results") // TODO style
+	    .setAttribute('class', 'searchnada')
+    } else {
+	results.forEach(function(result) {
+	    insertLink(out, result.doc.url, result.doc.title);
+	})
+    }
+}
+    
+// Following code is not search related, just here for convenience
+// Persist collaps state of map
+
+function maybeOpenMap() {
+    var open = sessionStorage.getItem('map') == 'true';
+    // var open = true;
+    if (open) {
+	document.getElementById('mapgraph').classList.add("show");
+    }
+}
+
+document.addEventListener("DOMContentLoaded", maybeOpenMap);
+
+function toggleMap() {
+    var saved = sessionStorage.getItem('map');
+    var open = null;
+    if (saved == null) {
+	var map = document.getElementById("mapgraph");
+	open = (map.getAttribute("class") == 'show');	
+    } else {
+	open = saved == 'true';
+    }
+    console.log('map is', open);
+    sessionStorage.setItem('map', !open);
+}
+
+// Also not search related: Expose elements tagged "local" if we are running from a local server
+function exposeLocals() {
+    var locals = document.getElementsByClassName("local");
+    for(var i = 0; i < locals.length; i++) {
+	locals[i].classList.remove("local");
+    }
+}
+
+function maybeExposeLocal() {
+    if (window.document.location.hostname == "localhost" ||
+	localStorage.getItem("admin") == "true") { // I set this by hand
+	exposeLocals();
+    }
+}
+
+document.addEventListener("DOMContentLoaded", maybeExposeLocal);
+
+// Click-to-insert for hover tags (eg #AskClaude; see rendering.clj hover-tag-hiccup
+// and design/ask-claude.md). Hovering still shows a quick preview; clicking the
+// lozenge toggles the popup pinned into the page's normal flow instead of only
+// appearing as a floating overlay on hover, styled distinctly via the "inserted"
+// class in default.css. Clicking again un-pins it.
+function toggleHoverTag(lozenge) {
+    lozenge.closest('.hover-tag-container').classList.toggle('inserted');
+}
+

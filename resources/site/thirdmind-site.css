@@ -1,0 +1,8 @@
+/* ThirdMind's adjustments to goddinpotty's css (default.css, hyper-roam.css) for markup that
+   commonmark renders differently: paragraphs inside quotes and blocks. */
+
+blockquote > p:last-child, li.block > div > p:last-child { margin-bottom: 0; }
+blockquote > p { margin-bottom: 0.5em; }
+
+/* "Open in Tine / Logseq" links: only for local viewing (goddinpotty's default.css also hides these) */
+.local { display: none; }

@@ -1,0 +1,1 @@
+- Published because it is tagged #Featured, an entry tag in the demo config.

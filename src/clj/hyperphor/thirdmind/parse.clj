@@ -27,11 +27,11 @@
        :day  (+ (* 10000 y) (* 100 m) d)})))
 
 (defn file-page-name
-  "Page name implied by a file name (before any title:: override)."
+  "Page name implied by a file name (before any title:: override). Logseq's legacy format: . is /."
   [file-name journal?]
   (if journal?
     (:name (journal-info file-name))
-    (decode-pct (str/replace file-name #"\.md$" ""))))
+    (decode-pct (str/replace (str/replace file-name #"\.md$" "") "." "/"))))
 
 ;;; Properties
 
@@ -61,6 +61,15 @@
   "Remove fenced and inline code so refs inside them are ignored."
   [s]
   (str/replace s code-re ""))
+
+;;; Tags as goddinpotty's parser finds them: also straight after punctuation, as in "(#Private)".
+;;; Logseq doesn't link those, so they're not refs, but privacy checks count them.
+(def loose-tag-re #"(?<![\w/&#])#(?:\[\[([^\[\]]+)\]\]|([^\s#\[\](){},;!?\"'+][^\s#\[\](){},;!?\"']*))")
+
+(defn loose-tags
+  "Tag names in text by loose-tag-re (outside code)."
+  [text]
+  (vec (distinct (for [[_ b t] (re-seq loose-tag-re (strip-code text))] (trim-tag (or b t))))))
 
 (defn extract-refs
   "{:pages [names] :tags [names] :block-refs [ids]} referenced in text."
@@ -113,8 +122,9 @@
       [{} lines])))
 
 (defn parse-lines
-  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :line-nos [n ...]}]}.
-  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1]).
+  "Parse markdown lines into {:props {} :blocks [{:content :props :path [i ...] :start n :line-nos [n ...]}]}.
+  Blocks are flat, in document order; :path is the outline position (e.g. [0 2 1]); :start is
+  the bullet's line number (absent on a preamble block).
   first-n is the file line number of the first line (default 0)."
   ([lines] (parse-lines lines 0))
   ([lines first-n]
@@ -148,6 +158,11 @@
           bullet
           (let [[_ indent text] bullet
                 w      (indent-width indent)
+                ;; text before the first bullet is block [-1], as in Logseq: indented bullets nest under it
+                stack  (if (and (nil? current) (empty? blocks)
+                                (some #(not (or (str/blank? (:line %)) (property-line (str/trim (:line %))))) preamble))
+                         [{:width 0 :path [-1]}]
+                         stack)
                 stack  (vec (take-while #(< (:width %) w) stack))
                 parent (or (:path (peek stack)) [])
                 idx    (get counts parent 0)
@@ -156,7 +171,7 @@
             (recur more (inc n) (if fence? (not fenced?) false)
                    (conj stack {:width w :path path})
                    (assoc counts parent (inc idx))
-                   {:path path :lines [{:line text :n n}]}
+                   {:path path :start n :lines [{:line text :n n}]}
                    preamble
                    (cond-> blocks current (conj (finish-block current)))))
 

@@ -41,7 +41,7 @@ But nothing wrong with messes.
 - a function from a set of blocks to a new set of blocks
 - a set of conventions for invoking this function and displaying its results
 
-### #blyg
+
 ### #public
 Sigh, I guess that makes more sense than my public-by-default approach
 ### #private
@@ -68,6 +68,5 @@ for persistence
 # Applications
 ## Publishing 
 Replaces goddinpotty finally.
-## Blygger 
-Have to think how, but obviously 
+
 ## Goals, noodging etc.

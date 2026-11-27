@@ -1,0 +1,2 @@
+- Journal pages are never published, and the walk doesn't follow their links. A page linked only from a journal, like the one the journal entry for Jan 15th, 2026 mentions, stays off the site.
+- A journal block linking to a published page isn't listed among that page's incoming links.

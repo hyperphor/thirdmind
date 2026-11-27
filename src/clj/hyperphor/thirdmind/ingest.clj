@@ -2,6 +2,7 @@
   "Turn a parsed Logseq graph into Tunamelt page and block objects."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.parse :as parse]
             [hyperphor.tunamelt.core :as t])
   (:import [java.net URLEncoder]))
@@ -31,12 +32,17 @@
 (defn- prop-attrs [props]
   (into {} (map (fn [[k v]] [(keyword "prop" k) (coerce-prop v)])) (dissoc props "id" "title")))
 
-(defn- split-list
+(defn split-list
   "Values of a comma-separated property like alias:: or tags::, [[ ]] stripped."
   [v]
   (->> (str/split (or v "") #",")
        (map #(-> % str/trim (str/replace #"^#?\[\[|\]\]$" "") (str/replace #"^#" "")))
        (remove str/blank?)))
+
+(defn page-aliases
+  "A page's aliases: alias:: values, plus aliases:: (a common slip, which goddinpotty also took)."
+  [props]
+  (distinct (concat (split-list (get props "alias")) (split-list (get props "aliases")))))
 
 ;;; Graph
 
@@ -53,13 +59,17 @@
 
 (defn graph->objects
   "Resolve refs across parsed pages; returns {:objects [[uri obj] ...] :report {...}}.
-  ctx supplies what lies outside pages: :aliases {alias-key page-key}, :known-id? (block ids)."
+  ctx supplies what lies outside pages: :aliases {alias-key page-key}, :known-id? (block ids),
+  :file-page? (page keys with a file)."
   ([realm pages] (graph->objects realm pages {}))
   ([realm pages ctx]
   (let [by-key     (group-by (comp page-key :name) pages)
         collisions (into {} (filter #(> (count (val %)) 1)) by-key)
+        ;; an alias never shadows a page with its own file (Logseq links [[name]] to that page)
+        file-page? (fn [k] (or (contains? by-key k) (when-let [f (:file-page? ctx)] (f k))))
         aliases    (into (or (:aliases ctx) {})
-                         (for [p pages, a (split-list (get-in p [:props "alias"]))]
+                         (for [p pages, a (page-aliases (:props p))
+                               :when (not (file-page? (page-key a)))]
                            [(page-key a) (page-key (:name p))]))
         resolve-pg (fn [name] (let [k (page-key name)] (get aliases k k)))
         blocks     (for [p pages, b (:blocks p)]
@@ -89,7 +99,8 @@
                (seq ref-keys)   (assoc :refs (mapv #(page-uri realm %) ref-keys))
                (seq tag-keys)   (assoc :tags (mapv #(page-uri realm %) tag-keys))
                (seq block-refs) (assoc :block-refs (mapv #(block-uri realm %) (filter known-ids block-refs)))
-               marker           (assoc :marker marker))]))
+               marker           (assoc :marker marker)
+               (:tmid b)        (assoc :tmid (:tmid b)))]))
         block-objs (doall block-objs)
         page-objs  (for [{:keys [name file journal? journal-day props blocks]} pages
                          :let [tags (map resolve-pg (split-list (get props "tags")))]]
@@ -98,7 +109,7 @@
                                      {:name name :file file :journal journal? :blocks (count blocks)})
                         journal-day         (assoc :journal-day journal-day)
                         (seq tags)          (assoc :tags (mapv #(page-uri realm %) tags))
-                        (get props "alias") (assoc :alias (vec (split-list (get props "alias")))))])
+                        (seq (page-aliases props)) (assoc :alias (vec (page-aliases props))))])
         file-keys  (set (keys by-key))
         page-tags  (mapcat #(map resolve-pg (split-list (get-in % [:props "tags"]))) pages)
         stub-keys  (sort (remove file-keys (into @page-refs page-tags)))
@@ -123,7 +134,7 @@
 (defn ingest!
   "Read the graph at dir and store it in the configured Tunamelt store under realm. Returns the report."
   [dir realm]
-  (let [pages (read-graph dir)
+  (let [pages (ids/assign-all! realm (read-graph dir))
         {:keys [objects report]} (graph->objects realm pages)]
     (t/put-many (concat objects (map #(file-record dir realm (:file %) (:name %)) pages)))
     report))
@@ -131,11 +142,14 @@
 ;;; Incremental: one file at a time, with aliases and block ids resolved against the db.
 
 (defn db-aliases
-  "{alias-key page-key} for every alias:: recorded in the db."
+  "{alias-key page-key} for every alias:: recorded in the db, except aliases naming a page with a file."
   [realm]
-  (into {} (for [{:keys [uri obj]} (t/find "page" {:realm realm})
-                 a (:alias obj)]
-             [(page-key a) (uri-key uri)])))
+  (let [pages (t/find "page" {:realm realm})
+        files (set (for [{:keys [uri obj]} pages :when (not (:stub obj))] (uri-key uri)))]
+    (into {} (for [{:keys [uri obj]} pages
+                   a (:alias obj)
+                   :let [k (page-key a)] :when (not (files k))]
+               [k (uri-key uri)]))))
 
 (defn- page-blocks [page-uri]
   (mapv #(select-keys % [:uri :obj]) (t/find "block" {:attrs {:page page-uri}})))
@@ -149,12 +163,14 @@
         old-page (some-> old-puri t/get)
         old      (if old-puri (page-blocks old-puri) [])
         f        (io/file dir rel)
-        parsed   (when (.isFile f) (parse/parse-file f (str/starts-with? rel "journals/") rel))
+        parsed   (when (.isFile f)
+                   (ids/assign-page! realm rel (parse/parse-file f (str/starts-with? rel "journals/") rel)))
         new-puri (some->> parsed :name page-key (page-uri realm))
         objects  (when parsed
                    (->> (:objects (graph->objects realm [parsed]
-                                                  {:aliases   (db-aliases realm)
-                                                   :known-id? #(some? (t/get (block-uri realm %)))}))
+                                                  {:aliases    (db-aliases realm)
+                                                   :known-id?  #(some? (t/get (block-uri realm %)))
+                                                   :file-page? #(some-> (t/get (page-uri realm %)) :stub not)}))
                         ;; stubs only for pages not already in the db
                         (remove (fn [[u o]] (and (:stub o) (t/get u))))
                         vec))]
@@ -167,8 +183,9 @@
       ;; a page still referenced elsewhere reverts to a stub
       (when (seq (t/referrers old-puri))
         (t/put old-puri {:name (:name old-page) :stub true})))
-    (when parsed
-      (t/put-many (conj objects (file-record dir realm rel (:name parsed)))))
+    (if parsed
+      (t/put-many (conj objects (file-record dir realm rel (:name parsed))))
+      (ids/gone! realm rel))
     {:page (or new-puri old-puri)
      :old  old
      :new  (vec (for [[u o] objects :when (str/includes? u "/block/")] {:uri u :obj o}))}))

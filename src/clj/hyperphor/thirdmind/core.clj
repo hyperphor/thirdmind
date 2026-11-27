@@ -3,6 +3,7 @@
   (:require [clojure.java.io :as io]
             [clojure.pprint :as pp]
             [clojure.string :as str]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.tunamelt.core :as t]))
 
@@ -10,11 +11,19 @@
   (t/configure! {:store "ammdi.db"}))
 
 (defn fresh-store!
-  "Delete any existing database at path and configure Tunamelt to use a new one there."
+  "Delete any existing database at path and configure Tunamelt to use a new one there.
+  Opens the ids store beside it, which is kept: block ids outlive rebuilds."
   [path realm]
   (doseq [suffix ["" "-wal" "-shm"]]
     (io/delete-file (str path suffix) true))
-  (t/configure! {:store path :realm realm}))
+  (t/configure! {:store path :realm realm})
+  (ids/open! (ids/path-for path)))
+
+(defn delete-store-files!
+  "Delete the database at path and its ids store (for tests)."
+  [path]
+  (doseq [p [(str path) (ids/path-for path)], suffix ["" "-wal" "-shm"]]
+    (io/delete-file (str p suffix) true)))
 
 (defn realm-for
   "Realm name from a graph directory name."

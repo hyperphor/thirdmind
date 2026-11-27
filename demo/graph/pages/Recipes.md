@@ -1,0 +1,1 @@
+- A namespace page. Its children are named Recipes/..., like [[Recipes/Bread]].

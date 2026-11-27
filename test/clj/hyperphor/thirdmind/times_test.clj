@@ -60,4 +60,4 @@
         (is (= 0 (times/backfill! (str dir) realm (fn [& _])))))
       (finally
         (doseq [f (reverse (file-seq dir))] (.delete ^java.io.File f))
-        (doseq [s ["" "-wal" "-shm"]] (.delete (io/file (str db s))))))))
+        (core/delete-store-files! db)))))

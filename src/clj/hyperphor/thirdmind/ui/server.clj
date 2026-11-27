@@ -1,15 +1,15 @@
 (ns hyperphor.thirdmind.ui.server
   "`lein serve`: browse an ingested graph over HTTP. Reads the db; run `lein watch` alongside to keep it fresh."
   (:require [clojure.data.json :as json]
+            [clojure.java.browse :refer [browse-url]]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [hiccup2.core :as h]
+            [hyperphor.thirdmind.config :as config]
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ui.pages :as pages]
             [hyperphor.tunamelt.core :as t]
-            [org.httpkit.server :as http]
-            [hyperphor.multitool.cljcore :as ju]
-            )
+            [org.httpkit.server :as http])
   (:import [java.net URLConnection URLDecoder]))
 
 (defn- decode [s] (URLDecoder/decode (str/replace s "+" "%2B") "UTF-8"))
@@ -96,14 +96,16 @@
           {:status 500 :headers {"Content-Type" "text/plain"} :body (str "Error: " (ex-message e))})))))
 
 (defn -main
-  "Usage: lein serve <graph-dir> [db-path] [port]"
-  [& [dir db port]]
+  "Usage: lein serve [config.edn | <graph-dir> [db-path] [port]]"
+  [& args]
+  (let [[cfg [dir db port]] (config/from-args args)
+        dir (or dir (:graph cfg))]
   (when-not dir
-    (println "Usage: lein serve <graph-dir> [db-path] [port]")
+    (println "Usage: lein serve [config.edn | <graph-dir> [db-path] [port]]")
     (System/exit 1))
-  (let [realm (core/realm-for dir)
-        db    (or db (str realm ".db"))
-        port  (if port (parse-long port) 8080)]
+  (let [realm (or (:realm cfg) (core/realm-for dir))
+        db    (or db (:db cfg) (str realm ".db"))
+        port  (cond port (parse-long port) (:port cfg) (:port cfg) :else 8080)]
     (when-not (.exists (io/file db))
       (println "No database at" db "- run `lein watch" dir "` or `lein run" dir "` first")
       (System/exit 1))
@@ -111,5 +113,5 @@
     (http/run-server (handler {:realm realm :dir dir :graph (.getName (io/file dir))}) {:port port})
     (println (str "Serving " db " at http://localhost:" port "/"))
     ;; Smart enough to be a no-op on server
-    (ju/open-url (format "http://localhost:%s" port))
-    @(promise)))
+    (browse-url (format "http://localhost:%s" port))
+    @(promise))))

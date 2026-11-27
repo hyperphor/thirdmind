@@ -55,6 +55,11 @@
     (is (str/includes? (html "{{video https://www.youtube.com/shorts/abc}}") "class=\"video vertical\""))
     (is (str/includes? (html "{{video https://vimeo.com/123}}") "player.vimeo.com/video/123"))
     (is (str/includes? (html "{{video https://example.com/v.mp4}}") "<a href=\"https://example.com/v.mp4\">")))
+  (testing "iframes"
+    (is (str/includes? (html "{{iframe https://open.spotify.com/playlist/3NKD?si=x}}")
+                       "src=\"https://open.spotify.com/embed/playlist/3NKD\""))
+    (is (str/includes? (html "{{iframe https://open.spotify.com/track/abc}}") "height:152px"))
+    (is (str/includes? (html "{{iframe https://example.com/widget}}") "src=\"https://example.com/widget\"")))
   (testing "tweets, including x.com and [title](url) args"
     (is (str/includes? (html "{{tweet  https://twitter.com/i/status/148 }}")
                        "<blockquote class=\"twitter-tweet\"><a href=\"https://twitter.com/i/status/148\">"))

@@ -4,6 +4,7 @@
   (:require [clojure.java.io :as io]
             [clojure.java.shell :as sh]
             [clojure.string :as str]
+            [hyperphor.thirdmind.config :as config]
             [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.parse :as parse]
@@ -122,13 +123,15 @@
     n))
 
 (defn -main
-  "Usage: lein times <graph-dir> [db-path]"
-  [& [dir db]]
+  "Usage: lein times [config.edn | <graph-dir> [db-path]]"
+  [& args]
+  (let [[cfg [dir db]] (config/from-args args)
+        dir (or dir (:graph cfg))]
   (when-not dir
-    (println "Usage: lein times <graph-dir> [db-path]")
+    (println "Usage: lein times [config.edn | <graph-dir> [db-path]]")
     (System/exit 1))
-  (let [realm (core/realm-for dir)
-        db    (or db (str realm ".db"))
+  (let [realm (or (:realm cfg) (core/realm-for dir))
+        db    (or db (:db cfg) (str realm ".db"))
         log   (fn [& xs] (println (str/join " " xs)) (flush))]
     (when-not (.exists (io/file db))
       (println "No database at" db "- run `lein run" dir "` first")
@@ -140,4 +143,4 @@
     (let [start (System/currentTimeMillis)
           n     (backfill! dir realm log)]
       (log (format "Timed %d files in %.0fs" n (/ (- (System/currentTimeMillis) start) 1000.0))))
-    (shutdown-agents)))
+    (shutdown-agents))))

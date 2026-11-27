@@ -1,0 +1,8 @@
+- This is a small demo graph for ThirdMind's site builder. It is the site's main page, so the build starts here and publishes every page it can reach by following links.
+- Each page shows one feature:
+	- [[Links and Tags]]: page links, tags, aliases and namespaces
+	- [[Privacy]]: how the Private tag keeps blocks and pages off the site
+	- [[Formatting]]: markdown, images, block references and math
+	- [[Journals]]: why journal pages aren't published
+- Pages that nothing here links to can still be published; see [[Publishing Rules]].
+- The navbar's All Pages link goes to a generated table of every published page, and Map to a graph of the whole site.

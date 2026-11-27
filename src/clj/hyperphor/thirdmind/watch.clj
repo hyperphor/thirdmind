@@ -1,27 +1,127 @@
 (ns hyperphor.thirdmind.watch
   "Side process: keep the db in sync with a graph directory's .md files and run tag handlers."
   (:require [clojure.string :as str]
+            [hyperphor.thirdmind.ask-claude :as ask-claude]
+            [hyperphor.thirdmind.blyg.cli :as blyg]
+            [hyperphor.thirdmind.claude :as claude]
+            [hyperphor.thirdmind.config :as config]
             [hyperphor.thirdmind.core :as core]
+            [hyperphor.thirdmind.ids :as ids]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.parse :as parse]
+            [hyperphor.thirdmind.smart-url :as smart-url]
             [hyperphor.thirdmind.times :as times]
             [hyperphor.tunamelt.core :as t])
-  (:import [java.time LocalTime]
+  (:import [java.util.concurrent Executors ExecutorService]
+           [java.time LocalTime]
            [java.time.format DateTimeFormatter]))
 
 ;;; Polls mtimes rather than using WatchService, which on macOS is itself a slow poller.
 
 (def ^:private time-fmt (DateTimeFormatter/ofPattern "HH:mm:ss"))
 
+(def log-file "Also append log lines here, when set (lein watch: target/watch.log)." (atom nil))
+
 (defn log [& xs]
-  (println (.format (LocalTime/now) time-fmt) (str/join " " xs))
-  (flush))
+  (let [line (str (.format (LocalTime/now) time-fmt) " " (str/join " " xs))]
+    (println line)
+    (flush)
+    (when-let [f @log-file] (spit f (str line "\n") :append true))))
 
 (defn- first-line [s] (first (str/split-lines (str s))))
 
 (def default-handlers
   "Tag name → (fn [block-entry]) run when a block newly carries that tag. Entry has :uri :obj :tag :file."
   {"blyg" (fn [{:keys [file obj]}] (log "#blyg" file "—" (first-line (:content obj))))})
+
+(def default-actions
+  "Name → {:detect (fn [cfg diff] → [{:key k ...}]) :act (fn [cfg rel event])}. Actions write to the
+  graph, so they only run with :write?; :act runs off the sync thread, one event at a time."
+  {"smart-url"
+   {:detect (fn [_ diff]
+              (for [[url b] (smart-url/new-urls diff)
+                    :when (not (ask-claude/in-answer? (:uri b)))]
+                {:key [(get-in b [:obj :content]) url] :url url :content (get-in b [:obj :content])}))
+    :act    (fn [{:keys [fetch-title] :as cfg} rel {:keys [url content]}]
+              (when-let [title (try (fetch-title url) (catch Exception e (log "smart-url:" (ex-message e)) nil))]
+                (if (smart-url/link! cfg rel content url title)
+                  (log "smart-url" rel url "→" title)
+                  (log "smart-url: not linked (block not found, or file kept changing)" rel url))))}
+   "ask-claude"
+   {:detect (fn [{:keys [realm]} diff]
+              (for [[mode b] (ask-claude/triggers realm diff)]
+                {:key (get-in b [:obj :content]) :mode mode :content (get-in b [:obj :content])}))
+    :act    (fn [cfg rel {:keys [mode content]}]
+              (log "#AskClaude" (name mode) rel "—" (first-line content))
+              (when (ask-claude/answer! cfg rel mode content) (log "#AskClaude answered" rel)))}})
+
+(defn- act! [{:keys [actions run in-flight] :as cfg} rel diff]
+  (doseq [[name {:keys [detect act]}] actions
+          ev (detect cfg diff)
+          :let [k [name rel (:key ev)]]
+          :when (not (contains? @in-flight k))]
+    (swap! in-flight conj k)
+    (run (fn []
+           (try (act cfg rel ev)
+                (catch Throwable e (log name "error" rel (ex-message e)))
+                (finally (swap! in-flight disj k)))))))
+
+;;; Auto-publish: a sync that changes a #blyg block (or one under it) marks the blyg dirty; after
+;;; :quiet-ms with no further such change, publish and push. Runs on the sync thread, so the db holds still.
+
+(defn blyg-touched?
+  "Does diff add, change or remove a block that carries a blyg control tag or sits under one?"
+  [realm {:keys [old new]}]
+  (let [tags     (set (for [tg blyg/control-tags] (ingest/page-uri realm (ingest/page-key tg))))
+        tagged?  #(some tags (:tags %))
+        under?   (fn [o] (loop [u (:parent o) n 0]
+                           (when-let [p (and u (< n 100) (t/get u))]
+                             (or (tagged? p) (recur (:parent p) (inc n))))))
+        entry    (juxt :uri :obj)
+        [os ns]  [(set (map entry old)) (set (map entry new))]
+        changed  (concat (remove (comp os entry) new) (remove (comp ns entry) old))]
+    (boolean (some (fn [{o :obj}] (or (tagged? o) (under? o))) changed))))
+
+(defn blyg-publish!
+  "Publish the blyg per config :blygger settings, and push it if anything changed; logs the outcome."
+  [{:keys [realm dir] {:keys [goddinpotty state ids-backup site-repo mount remote]} :blygger}]
+  (let [site (str site-repo "/" mount)
+        {:keys [status changes report]}
+        (blyg/publish! {:realm realm :graph dir :goddinpotty goddinpotty :state state :live site :out site
+                        :ids-backup ids-backup :skip-unchanged? true})]
+    (log "blyg publish:" (name status) (if (= status :unchanged) "" (blyg/change-counts changes)))
+    (doseq [[uri why] (:skipped report)] (log "blyg: skipped" uri "-" why))
+    (case status
+      :refused (log "blyg: not publishing, new items look like old ones:" (:possible-duplicates report)
+                    "- check, then `lein blyg publish --allow-new`")
+      :written (log "blyg push:" (name (blyg/push! site-repo mount remote)))
+      nil)))
+
+(defn blyg-mention!
+  "Send pending webmentions (they wait until the pushed site is live); logs each. Returns how many wait."
+  [{{:keys [state site-repo mount]} :blygger}]
+  (let [{lines :log pending :pending} (blyg/mention! {:state state :live (str site-repo "/" mount)})]
+    (doseq [l lines] (log "blyg mention:" l))
+    pending))
+
+(defn- auto-publish!
+  "Publish once #blyg edits go quiet; then try webmentions every :mention-ms (default 2 min) while any
+  stub waits for the site to go live, up to 10 tries."
+  [{:keys [blygger blyg-dirty blyg-run blyg-mention blyg-mentions]
+    :or {blyg-run blyg-publish! blyg-mention blyg-mention!} :as cfg}]
+  (let [now (System/currentTimeMillis)
+        gap (:mention-ms blygger 120000)]
+    (when-let [t0 (some-> blyg-dirty deref)]
+      (when (>= (- now t0) (:quiet-ms blygger 120000))
+        (reset! blyg-dirty nil)
+        (try (blyg-run cfg)
+             (catch Exception e (log "blyg publish error:" (ex-message e))))
+        (some-> blyg-mentions (reset! {:at now :tries 0}))))
+    (when-let [{:keys [at tries]} (some-> blyg-mentions deref)]
+      (when (>= now at)
+        (let [pending (try (blyg-mention cfg)
+                           (catch Exception e (log "blyg mention error:" (ex-message e)) 1))]
+          (reset! blyg-mentions (when (and (pos? pending) (< (inc tries) 10)) {:at (+ now gap) :tries (inc tries)})))))))
 
 (defn scan
   "{rel-path [mtime size]} for the graph's page and journal files."
@@ -49,14 +149,18 @@
   (let [disk    (scan dir)
         cutoff  (- (System/currentTimeMillis) settle-ms)
         settled (into {} (filter (fn [[_ [mtime]]] (< mtime cutoff))) disk)
-        changed (concat (for [[rel stamp] settled :when (not= stamp (known rel))] rel)
-                        (remove disk (keys known)))]
+        ;; removals first, so a renamed file's ids are orphaned before its new name looks for them
+        changed (concat (remove disk (keys known))
+                        (for [[rel stamp] settled :when (not= stamp (known rel))] rel))]
     (reduce (fn [known rel]
               (try
                 (let [diff (ingest/update-file! dir realm rel)]
                   (log (if (disk rel) "synced" "removed") rel)
                   (when (and times? (disk rel)) (times/update-file-times! dir realm rel))
-                  (fire! cfg rel diff))
+                  (fire! cfg rel diff)
+                  (when (and (:blyg-dirty cfg) (blyg-touched? realm diff))
+                    (reset! (:blyg-dirty cfg) (System/currentTimeMillis)))
+                  (when (:write? cfg) (act! cfg rel diff)))
                 (catch Exception e (log "error syncing" rel (ex-message e))))
               (if-let [stamp (disk rel)] (assoc known rel stamp) (dissoc known rel)))
             known
@@ -66,6 +170,7 @@
   "Bring the configured store up to date with dir; returns the known map for sync!.
   A db without file records (eg from `lein run`, or new) is rebuilt from scratch, without firing handlers."
   [{:keys [dir realm db] :as cfg}]
+  (ids/open! (ids/path-for db))
   (if (seq (t/find "file" {:realm realm :limit 1}))
     (sync! cfg (recorded realm))
     (do (log "No file records in" db "- rebuilding from" dir)
@@ -75,31 +180,55 @@
         (when (:times? cfg) (log "Block times not computed; run `lein times" dir "` to backfill"))
         (recorded realm))))
 
+(defn action-defaults
+  "cfg with what write actions need, unless supplied: a serial worker, Claude, title fetching."
+  [cfg]
+  (merge {:actions default-actions :in-flight (atom #{}) :quiet-ms 8000 :log log
+          :ask #(claude/ask % log) :fetch-title smart-url/fetch-title}
+         (when-not (:run cfg)
+           (let [^ExecutorService ex (Executors/newSingleThreadExecutor)]
+             {:run #(.submit ex ^Runnable %) :executor ex}))
+         cfg))
+
 (defn start!
   "Init, then sync! every :interval-ms on a background thread. Returns a fn that stops it."
   [{:keys [interval-ms] :or {interval-ms 2000} :as cfg}]
-  (let [cfg     (merge {:handlers default-handlers :settle-ms interval-ms
-                        :times? (times/git-repo? (:dir cfg))}
-                       cfg)
+  (let [cfg     (cond-> (merge {:handlers default-handlers :settle-ms interval-ms
+                                :times? (times/git-repo? (:dir cfg))}
+                               cfg)
+                  (:write? cfg) action-defaults
+                  (get-in cfg [:blygger :auto-publish?]) (-> (update :blyg-dirty #(or % (atom (System/currentTimeMillis))))
+                                                              (update :blyg-mentions #(or % (atom nil)))))  ; publish once at start
         known   (init! cfg)
         running (atom true)
         worker  (future
                   (loop [known known]
                     (when @running
                       (Thread/sleep (long interval-ms))
-                      (recur (try (sync! cfg known)
-                                  (catch Exception e (log "sync error" (ex-message e)) known))))))]
-    (fn [] (reset! running false) @worker nil)))
+                      (let [known (try (sync! cfg known)
+                                       (catch Exception e (log "sync error" (ex-message e)) known))]
+                        (auto-publish! cfg)
+                        (recur known)))))]
+    (fn [] (reset! running false) @worker (some-> ^ExecutorService (:executor cfg) .shutdownNow) nil)))
 
 (defn -main
-  "Usage: lein watch <graph-dir> [db-path]"
-  [& [dir db]]
-  (when-not dir
-    (println "Usage: lein watch <graph-dir> [db-path]")
-    (System/exit 1))
-  (let [realm (core/realm-for dir)
-        db    (or db (str realm ".db"))]
-    (t/configure! {:store db :realm realm})
-    (start! {:dir dir :realm realm :db db})
-    (log "Watching" dir "→" db)
-    @(promise)))
+  "Usage: lein watch [config.edn | [--write] <graph-dir> [db-path]]"
+  [& args]
+  (let [[cfg args] (config/from-args args)
+        write? (or (some #{"--write"} args) (:write? cfg))
+        [dir db] (remove #{"--write"} args)
+        dir    (or dir (:graph cfg))
+        db     (or db (:db cfg))]
+    (when-not dir
+      (println "Usage: lein watch [config.edn | [--write] <graph-dir> [db-path]]")
+      (println "  --write  enable actions that edit the graph (smart URLs, #AskClaude)")
+      (println "  with no arguments, the config in config/ (see config.clj)")
+      (System/exit 1))
+    (let [realm (or (:realm cfg) (core/realm-for dir))
+          db    (or db (str realm ".db"))]
+      (t/configure! {:store db :realm realm})
+      (reset! log-file "target/watch.log")
+      (start! {:dir dir :realm realm :db db :write? (boolean write?) :blygger (:blygger cfg)})
+      (log "Watching" dir "→" db (if write? "(writing: smart URLs, #AskClaude)" "")
+           (if (get-in cfg [:blygger :auto-publish?]) "(auto-publishing #blyg)" ""))
+      @(promise))))

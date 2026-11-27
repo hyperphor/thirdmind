@@ -2,6 +2,7 @@
   "Full-text search over an ingested graph (Tunamelt's FTS index); reports matching pages."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [hyperphor.thirdmind.config :as config]
             [hyperphor.tunamelt.core :as t]))
 
 (defn search
@@ -25,11 +26,11 @@
 (defn- one-line [s] (str/trim (str/replace (str s) #"\s+" " ")))
 
 (defn -main
-  "Usage: lein search <query> [db-path] [--snippets] [--raw]"
+  "Usage: lein search <query> [db-path] [--snippets] [--raw]; the db defaults to the config's."
   [& args]
   (let [flags      (set (filter #(str/starts-with? % "--") args))
         [query db] (remove flags args)
-        db         (or db "ammdi.db")]
+        db         (or db (some-> (config/default-file) config/load-config :db) "")]
     (when (str/blank? query)
       (println "Usage: lein search <query> [db-path] [--snippets] [--raw]")
       (System/exit 1))

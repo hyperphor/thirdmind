@@ -1,6 +1,7 @@
 (ns hyperphor.thirdmind.watch-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing use-fixtures]]
+            [hyperphor.thirdmind.core :as core]
             [hyperphor.thirdmind.ingest :as ingest]
             [hyperphor.thirdmind.watch :as watch]
             [hyperphor.tunamelt.core :as t]))
@@ -30,7 +31,7 @@
         (f))
       (finally
         (delete-tree dir)
-        (doseq [suffix ["" "-wal" "-shm"]] (.delete (io/file (str db suffix))))))))
+        (core/delete-store-files! db)))))
 
 (use-fixtures :each watch-fixture)
 
@@ -107,4 +108,35 @@
       (write! "pages/Looped.md" "- via the loop #blyg")
       (loop [n 0] (when (and (empty? @events) (< n 100)) (Thread/sleep 50) (recur (inc n))))
       (is (= [["pages/Looped.md" "via the loop #blyg"]] @events))
+      (finally (stop)))))
+
+(deftest blyg-touched-test
+  (watch/init! *cfg*)
+  (let [touched? (fn [rel content] (write! rel content) (watch/blyg-touched? realm (ingest/update-file! (:dir *cfg*) realm rel)))]
+    (is (touched? "pages/T.md" "- post #blyg\n  - child\n- other"))
+    (is (not (touched? "pages/T.md" "- post #blyg\n  - child\n- other, edited")) "untagged sibling")
+    (is (touched? "pages/T.md" "- post #blyg\n  - child, edited\n- other, edited") "child of a tagged block")
+    (is (touched? "pages/T.md" "- post\n  - child, edited\n- other, edited") "tag removed")
+    (is (not (touched? "pages/T.md" "- post\n  - child, edited again\n- other, edited")))))
+
+(deftest auto-publish-test
+  (let [runs (atom 0)
+        mentions (atom 0)
+        stop (watch/start! (assoc *cfg* :interval-ms 50 :settle-ms 0
+                                  :blygger {:auto-publish? true :quiet-ms 300 :mention-ms 100} :blyg-dirty (atom nil)
+                                  :blyg-run (fn [_] (swap! runs inc))
+                                  ;; one stub waits for the site twice, then goes out
+                                  :blyg-mention (fn [_] (if (< (swap! mentions inc) 3) 1 0))))]
+    (try
+      (write! "pages/Untagged.md" "- nothing to publish")
+      (Thread/sleep 600)
+      (is (zero? @runs) "untagged edits don't publish")
+      (write! "pages/Post.md" "- a post #blyg")
+      (Thread/sleep 150)
+      (is (zero? @runs) "waits for quiet")
+      (loop [n 0] (when (and (zero? @runs) (< n 40)) (Thread/sleep 50) (recur (inc n))))
+      (is (= 1 @runs))
+      (Thread/sleep 500)
+      (is (= 1 @runs) "once per burst")
+      (is (= 3 @mentions) "mentions retried after the publish until none wait")
       (finally (stop)))))
