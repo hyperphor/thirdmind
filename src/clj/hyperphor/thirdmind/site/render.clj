@@ -125,8 +125,12 @@
   [ctx rctx obj]
   (apply str (for [[k v] (sort-by (comp str/lower-case name key) obj)
                    :when (and (= "prop" (namespace k)) (not (hidden-props (str/lower-case (name k)))))]
-               (str "<li><b>" (r/escape (name k)) "</b>: "
-                    (str/replace (site-html ctx (r/block-html rctx (str v))) #"^<span>(.*)</span>$" "$1") "</li>"))))
+               ;; tags:: values are page refs bracketed or not, as ingest reads them
+               (let [v (if (= "tags" (str/lower-case (name k)))
+                         (str/join ", " (map #(str "[[" % "]]") (ingest/split-list (str v))))
+                         (str v))]
+                 (str "<li><b>" (r/escape (name k)) "</b>: "
+                      (str/replace (site-html ctx (r/block-html rctx v)) #"^<span>(.*)</span>$" "$1") "</li>")))))
 
 (defn- unhover
   "html with hover-tag placeholders (from render-ctx's :tag-html) replaced by lozenge and popup."

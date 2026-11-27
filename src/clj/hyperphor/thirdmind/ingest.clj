@@ -32,7 +32,7 @@
 (defn- prop-attrs [props]
   (into {} (map (fn [[k v]] [(keyword "prop" k) (coerce-prop v)])) (dissoc props "id" "title")))
 
-(defn- split-list
+(defn split-list
   "Values of a comma-separated property like alias:: or tags::, [[ ]] stripped."
   [v]
   (->> (str/split (or v "") #",")

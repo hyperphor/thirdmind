@@ -30,7 +30,8 @@
    "pages/Blyg child.md"   "- linked from that item's child"
    "pages/Blyg secret.md"  "- linked only from a private child of the item"
    "pages/Open.md"         "public:: true\n\n- unlinked, but public:: true, and it links [[Via open]]"
-   "pages/Via open.md"     "- reached from a public:: page"})
+   "pages/Via open.md"     "- reached from a public:: page"
+   "pages/Tagged.md"       "tags:: Hub, [[Linked]]\n\n- a page tagged bare and bracketed"})
 
 (defn- graph-fixture [f]
   (let [dir  (.toFile (java.nio.file.Files/createTempDirectory "site-include" (make-array java.nio.file.attribute.FileAttribute 0)))
@@ -84,6 +85,8 @@
       (is (re-find #"<a class=\"pagelink\" href=\"Home\">Home</a>" linked))
       (is (re-find #"quoted" linked) "a published block ref is shown")
       (is (not (re-find #"secret-target" linked)) "nor is an unpublished block's id"))
+    (is (re-find #"<b>tags</b>: <a class=\"pagelink\" href=\"Hub\">Hub</a>, <a class=\"pagelink\" href=\"Linked\">Linked</a>" (page "Tagged"))
+        "bare tags:: values link like bracketed ones")
     (is (re-find #"Incoming links" (page "Home")))
     (is (not (re-find #"diary line" (page "Home"))) "a journal block linking a page isn't among its incoming links")
     (is (re-find #"url=Home" (page "index.html")))
