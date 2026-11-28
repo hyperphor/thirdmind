@@ -86,42 +86,53 @@
   [entry note]
   (update entry :changelog #(conj (pop %) (assoc (peek %) :note note :generated true))))
 
+(defn- source-text
+  "md as its author wrote it: links to site pages as their text (their targets move as pages are
+  published or aliased), images as their file name, whitespace collapsed."
+  [base-url md]
+  (-> (str md)
+      (str/replace #"!\[[^\]]*\]\((?:[^)]*/)?([^)/]*)\)(\{[^}]*\})?" " $1 ")
+      (str/replace #"\[([^\]]*)\]\(([^)]*)\)"
+                   (fn [[m t u]] (if (and base-url (str/starts-with? u base-url)) t m)))
+      (str/replace #"\s+" " ")
+      str/trim))
+
+;;; A version bumps only when what the author wrote changes: the text, a non-site link, an image,
+;;; the kind, or a pinned transclusion. Re-rendering alone (a page newly published, an alias
+;;; resolved, different markup) refreshes the current version in place.
+
 (defn- advance
-  "existing (or nil) moved to this rendering, bumping only when ThirdMind's rendering changed.
-  blank-id? says which blyg ids are unmatched empty legacy items, which a first-sight comparison
-  ignores. A frozen entry (:tm-frozen) still holds goddinpotty's content, and is judged by plain,
-  a delay of [md html] rendered without media (images at the site's /assets/), so that moving
-  images to blyg media alone doesn't bump it."
-  [blank-id? existing kind md html trans stub-of now plain]
-  (let [base   [(name kind) (w/content-hash md) (w/html-signature html) trans]
-        [pm ph] (if plain @plain [md html])
-        pbase  [(name kind) (w/content-hash pm) (w/html-signature ph) trans]
-        seen #(-> % (assoc :tm-base base) (dissoc :tm-frozen))
+  "existing (or nil) moved to this rendering, bumping only when its source text changed (see
+  source-text). blank-id? says which blyg ids are unmatched empty legacy items, which a frozen
+  comparison ignores. A frozen entry (:tm-frozen) keeps goddinpotty's content while it matches
+  plain, a delay of [md html] rendered without media (images at the site's /assets/)."
+  [blank-id? base-url existing kind md html trans stub-of now plain]
+  (let [src  (partial source-text base-url)
+        seen #(-> % (assoc :tm-base [(name kind) (src md) trans]) (dissoc :tm-frozen))
         bump #(-> (w/next-entry (assoc existing :content-hash "") kind md html trans stub-of now)
                   seen (with-note (change-note existing kind html trans)))]
     (cond
       (nil? existing)
       (seen (w/next-entry nil kind md html trans stub-of now))
 
-      ;; first sight of an imported entry: freeze if it is the same thing goddinpotty published,
-      ;; text compared after normalizing rendering differences (and not counting empty items
-      ;; goddinpotty published: a thread of only those is a fragment here); else a new version
-      (nil? (:tm-base existing))
+      ;; an imported entry: frozen while it is the same thing goddinpotty published, text
+      ;; compared after normalizing rendering differences (and not counting empty items
+      ;; goddinpotty published: a thread of only those is a fragment here)
+      (or (nil? (:tm-base existing)) (:tm-frozen existing))
       (if (let [tr (some->> (:transclusions existing) (remove (comp blank-id? :id)) vec)
                 k  (if (and (= :thread (keyword (:kind existing))) (empty? tr) (not (:stub-of existing)))
                      :fragment
                      (keyword (:kind existing)))]
             (and (= kind k) (= trans (when (= k :thread) tr))
-                 (= (norm-text (:content-md existing)) (norm-text pm))))
-        (assoc existing :tm-base pbase :tm-frozen true)
+                 (= (norm-text (:content-md existing)) (norm-text (first @(or plain (delay [md])))))))
+        (assoc existing :tm-base true :tm-frozen true)
         (bump))
 
-      (:tm-frozen existing)
-      (if (= pbase (:tm-base existing)) existing (bump))
-
-      ;; unchanged for readers; refresh presentation-only html (eg a title)
-      (= base (:tm-base existing))
-      (if (= html (:content-html existing)) existing (assoc existing :content-html html))
+      (and (= (name kind) (name (:kind existing))) (= trans (:transclusions existing))
+           (= (src md) (src (:content-md existing))))
+      (if (and (= md (:content-md existing)) (= html (:content-html existing)))
+        existing
+        (assoc existing :content-md md :content-html html :content-hash (w/content-hash md)))
 
       :else
       (bump))))
@@ -186,7 +197,7 @@
         items0  (rekey-moved ctx cand id (distinct (concat tagged children)) (:items state))
         ;; empty legacy items still unmatched (keyed by their uuid): ThirdMind doesn't publish those
         blank?  (set (for [[k e] items0 :when (and (= k (:legacy-uuid e)) (str/blank? (:content-md e)))] (:blyg-id e)))
-        advance (partial advance blank?)
+        advance (partial advance blank? (:base-url ctx))
         ;; the same rendering without media, for judging frozen entries
         pctx    (when (:graph-dir ctx) (assoc ctx :graph-dir nil :media (atom {})))
         ;; fragments: leaves and promoted children (no attribution of their own)

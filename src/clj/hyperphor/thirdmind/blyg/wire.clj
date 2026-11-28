@@ -41,9 +41,9 @@
   (.format (java.time.format.DateTimeFormatter/ofPattern "EEE, dd MMM yyyy HH:mm:ss 'GMT'" java.util.Locale/US)
            (.atZone (java.time.Instant/parse iso) java.time.ZoneOffset/UTC)))
 
-;;; Versions. A version bumps when what readers see changes: content_md (the hash), the resolved
-;;; transclusions (a thread re-baking an edited child), or the visible HTML (text and link
-;;; targets, eg a page published since). Presentation-only markup doesn't count.
+;;; Versions. next-entry bumps when what readers see changes: content_md (the hash), the resolved
+;;; transclusions, or the visible HTML. The publisher (publish/advance) calls it only once the
+;;; author's text has changed.
 
 (def ^:private structural-tags #{"ul" "ol" "li" "blockquote" "table" "tr" "td" "th" "pre" "code"})
 
