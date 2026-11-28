@@ -58,6 +58,17 @@
       (ingest!)
       (is (= {:bumped 2} (select-keys (counts (p/changes s1 (:state (p/plan (ctx) s1 "later")))) [:bumped]))))))
 
+(deftest relinking-doesnt-bump
+  (spit (io/file *dir* "pages/B.md") (str page "- see [[C]] #blyg\n"))
+  (ingest!)
+  (let [pctx #(c/ctx realm {:base-url "https://s.example" :published % :exit-tags []})
+        s1   (:state (p/plan (pctx #{"B"}) {:items {}} "t1"))
+        s2   (:state (p/plan (pctx #{"B" "C"}) s1 "t2"))
+        see  #(some (fn [e] (when (str/includes? (:content-md e) "see") e)) (vals (:items %)))]
+    (is (= zero (counts (p/changes s1 s2))) "a linked page newly published doesn't bump")
+    (is (str/includes? (:content-md (see s2)) "](https://s.example/C)") "the current version is re-linked in place")
+    (is (= (w/content-hash (:content-md (see s2))) (:content-hash (see s2))))))
+
 (deftest migrating
   (ingest!)
   (let [old (legacy)
